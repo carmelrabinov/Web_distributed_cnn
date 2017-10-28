@@ -1,18 +1,18 @@
-1. install docker for windows
-2. run the following command in powershell:
-	docker run -d -p 5672:5672 -p 15672:15672 rabbitmq:management
+project installation:
+	1. install docker for windows
+	2. install python 3.5 (can use anconda)
+	3. install keras
+	4. install pika
 
-3. open anaconda
-4. run the following set of commands:
-	activate py35
-	pip install pika
+run:
+	1. run the following command in powershell:
+		docker run -d -p 5672:5672 -p 15672:15672 rabbitmq:management
+	2. open propmt (can use anaconda) and enter python 3.5 env
+	3. run: python server.py
+	4. run: python client.py <clinet name>:
 
-5. run the server.py
-6. run the client:
-	python client.py NAME
-
-admin page
-==========
+RabbitMQ admin page
+===================
 localhost:15672
 
 user/password: guest/guest
