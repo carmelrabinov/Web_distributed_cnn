@@ -6,25 +6,22 @@ import numpy as np
 import json
 import inspect
 import time
+
+# to aviod warnings
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+import tensorflow as tf
+
+
 from keras import backend as K
 if K.backend()=='tensorflow':
     K.set_image_dim_ordering("th")  
-
-
-
-def weightsDiff(W1,W2):
-    diff = W1
-    i=0
-    for l1,l2 in zip(W1,W2):
-        diff[i] = W2-W1
-        i=i+1
-    return diff
 
 def weightsAdd(W,W_diff):
     add = W
     i=0
     for l1,l2 in zip(W,W_diff):
-        add[i] = W+W_diff
+        add[i] = l1+l2
         i=i+1
     return add
 
@@ -55,7 +52,7 @@ def build_model():
                   optimizer=keras.optimizers.Adadelta(),
                   metrics=['accuracy'])
 
-    
+#    weights = model.get_weights()
 #    weights_list = list(np.array(arr).tolist() for arr in weights)
 #    weights_json=json.dumps(weights_list)
 #    data = dict(weights=weights_list)
@@ -71,9 +68,11 @@ def build_model():
 
 
 # setting up the connection
+print('Server is setting up...')
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='localhost'))
 channel = connection.channel()
+
 
 channel.exchange_declare(exchange='pika',
                          exchange_type='direct',
@@ -120,27 +119,27 @@ def the_script(name, n):
     return res
 
 
-def send(num):
-    fn_txt = "".join(inspect.getsourcelines(the_script)[0])
-    data = dict(fn=fn_txt, data=num)
-
-    channel.basic_publish(exchange='pika',
-                          routing_key='requests',
-                          body=json.dumps(data))
-    print(" [x] Sent '%s'" % json.dumps(data['data']))
+#def send(num):
+#    fn_txt = "".join(inspect.getsourcelines(the_script)[0])
+#    data = dict(fn=fn_txt, data=num)
+#
+#    channel.basic_publish(exchange='pika',
+#                          routing_key='requests',
+#                          body=json.dumps(data))
+#    print(" [x] Sent '%s'" % json.dumps(data['data']))
 
 
 def send_model(client_name):
     fn_txt = "".join(inspect.getsourcelines(build_model)[0])
     data = dict(fn=fn_txt)
     channel.basic_publish(exchange='pika',
-                          routing_key='model_build'+client_name,
+                          routing_key='model_build '+client_name,
                           body=json.dumps(data))
-    print(" [x] Sent model to {}".format(client_name))
+    print(" [x] Sent nn model to {}".format(client_name))
 
 
-def send_weights(weights):
-    data = dict(weights = list(np.array(arr).tolist() for arr in weights))
+def send_weights(weights,batch_num):
+    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num)
     channel.basic_publish(exchange='pika',
                           routing_key='requests',
                           body=json.dumps(data))
@@ -152,7 +151,7 @@ def recieved(m, body):
 
 def recieved_results(m, body):
     channel.basic_ack(m.delivery_tag)
-    print('got results: ', body)
+    print('[x] got results: ', body)
 
 
 try:
@@ -165,23 +164,32 @@ if mode=='debug':
     model.summary()
 elif mode=='train':
     model = build_model()
-    print('Setup done')
+    print('Server setup done')
     while True:
+        batch_num = 0
         m, _, body = channel.basic_get(queue='new_client', no_ack=True)
         if m:
             data = json.loads(body.decode('utf-8'))
             client_name = data['name']
             send_model(client_name)
 
-#        m, _, body = channel.basic_get(queue='ready', no_ack=True)
-#        if m:
-#            print (body)
-#            weights = model.get_weights()
-#            send_weights(weights)
-#        m, _, body = channel.basic_get(queue='results', no_ack=False)
-#        if m:
+        m, _, body = channel.basic_get(queue='ready', no_ack=True)
+        if m:
+            data = json.loads(body.decode('utf-8'))
+            print(' [x] recieved ready request from {}'.format(data['name']))
+            weights = model.get_weights()
+            send_weights(weights,batch_num)
+            batch_num = batch_num + 1
+        m, _, body = channel.basic_get(queue='results', no_ack=False)
+        if m:
+            data = json.loads(body.decode('utf-8'))
+            print(' [x] recieved diff_weights from {} with loss: {}'.format(data['name'],data['train_loss']))
+            diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
+            weights = model.get_weights()
+            model.set_weights(weightsAdd(weights,diff_weights))
+
 #            recieved_results(m, body)
-#    #    send(randint(1, 100))
+    #    send(randint(1, 100))
         time.sleep(5)
 
 
