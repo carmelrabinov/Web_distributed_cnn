@@ -9,7 +9,7 @@ import time
 try: import cPickle as pickle
 except: import pickle
 
-# to aviod warnings
+# to aviod TF warnings
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 import tensorflow as tf
@@ -26,46 +26,148 @@ def weightsAdd(W,W_diff):
         i=i+1
     return add
 
+def build_model(dataset, mode):
     
-def build_model():
     import keras
-    from keras.datasets import mnist
     from keras.models import Sequential
-    from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
+    from keras.layers import Activation, Flatten, Dense, Dropout, Conv2D, MaxPooling2D
     from keras import backend as K
-    
-    input_shape = (1, 28, 28)
-    num_classes = 10
-    
-    model = Sequential()
-    model.add(Conv2D(32, kernel_size=(3, 3),
-                     activation='relu',
-                     input_shape=input_shape))
-    model.add(Conv2D(64, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
-    model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(num_classes, activation='softmax'))
-    
-    model.compile(loss=keras.losses.categorical_crossentropy,
-                  optimizer=keras.optimizers.Adadelta(),
-                  metrics=['accuracy'])
 
-#    weights = model.get_weights()
-#    weights_list = list(np.array(arr).tolist() for arr in weights)
-#    weights_json=json.dumps(weights_list)
-#    data = dict(weights=weights_list)
-#    test = json.dumps(data)
-#    
-#    body = json.loads(test)
-#    data = body['weights']
-#
-#    reconstract = list(np.asarray(lis) for lis in data)
-    
-    return model
+    # Convolutional Neural Network for MNIST dataset
+    if dataset == 'mnist':
+        from keras.datasets import mnist
 
+        input_shape = (1, 28, 28)
+        num_classes = 10
+        
+        # Define the model
+        model = Sequential()
+        model.add(Conv2D(32, kernel_size=(3, 3),
+                         activation='relu',
+                         input_shape=input_shape))
+        model.add(Conv2D(64, (3, 3), activation='relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        model.add(Flatten())
+        model.add(Dense(128, activation='relu'))
+        model.add(Dropout(0.5))
+        model.add(Dense(num_classes, activation='softmax'))
+        
+        # Compile the model
+        model.compile(loss='categorical_crossentropy',
+                      optimizer='adadelta',
+                      metrics=['accuracy'])
+    
+   
+    # Convolutional Neural Network for CIFAR-10 dataset
+    elif dataset == 'cifar10':
+        from keras.datasets import cifar10
+
+        input_shape=(3, 32, 32)
+        num_classes = 10
+
+        
+        # Define the model
+        model = Sequential()
+        model.add(Conv2D(48, (3, 3), padding="same", input_shape=input_shape))
+        model.add(Activation('relu'))
+        model.add(Conv2D(48, (3, 3)))
+        model.add(Activation('relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        model.add(Conv2D(96, (3, 3), padding="same"))
+        model.add(Activation('relu'))
+        model.add(Conv2D(96, (3, 3)))
+        model.add(Activation('relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        model.add(Conv2D(192, (3, 3), padding="same"))
+        model.add(Activation('relu'))
+        model.add(Conv2D(192, (3, 3)))
+        model.add(Activation('relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+        model.add(Dropout(0.25))
+        model.add(Flatten())
+        model.add(Dense(512))
+        model.add(Activation('relu'))
+        model.add(Dropout(0.5))
+        model.add(Dense(256))
+        model.add(Activation('relu'))
+        model.add(Dropout(0.5))
+        model.add(Dense(num_classes, activation='softmax'))
+        
+        # Compile the model
+        model.compile(optimizer='adam', 
+                      loss='categorical_crossentropy', 
+                      metrics=['accuracy'])
+        
+    # load data
+    if mode == 'client' and dataset == 'cifar10':
+        # the data, shuffled and split between train and test sets
+        (x, y), (_, _) = cifar10.load_data()
+    elif mode == 'server' and dataset == 'cifar10':
+        (_, _), (x, y) = cifar10.load_data()
+    elif mode == 'client' and dataset == 'mnist':
+        # the data, shuffled and split between train and test sets
+        (x, y), (_, _) = mnist.load_data()
+    elif mode == 'server' and dataset == 'mnist':
+        (_, _), (x, y) = mnist.load_data()
+
+    # preproccessing data
+    num_train, img_channels, img_rows, img_cols =  x.shape
+
+    if K.image_data_format() == 'channels_first':
+        x = x.reshape(num_train, img_channels, img_rows, img_cols)
+        input_shape = (img_channels, img_rows, img_cols)
+    else:
+        x = x.reshape(num_train, img_rows, img_cols, img_channels)
+        input_shape = (img_rows, img_cols, img_channels)
+    
+    x = x.astype('float32')/255
+    # convert class vectors to binary class matrices
+    y = keras.utils.to_categorical(y, num_classes)
+       
+    if mode == 'client':
+        batch_size = 100
+        X = []
+        Y = []
+        for i in range(int(num_train/batch_size)):
+            X.append(x[i:(i+batch_size),:,:,:])
+            Y.append(y[i:(i+batch_size),:])
+        
+        return (model, X, Y)
+
+    elif mode == 'server':
+        global x_test, y_test
+        y_test = y
+        x_test = x
+
+        return model
+
+
+def send_model(client_name, dataset):
+    fn_txt = "".join(inspect.getsourcelines(build_model)[0])
+    data = dict(fn=fn_txt, dataset = dataset)
+    channel.basic_publish(exchange='pika',
+                          routing_key='model_build '+client_name,
+                          body=json.dumps(data))
+    print(" [x] Sent nn model to {}".format(client_name))
+
+
+def send_weights(weights,batch_num):
+    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num)
+    channel.basic_publish(exchange='pika',
+                          routing_key='requests',
+                          body=json.dumps(data))
+    print(" [x] Sent weights calculation request")
+
+
+def recieved_results(m, body):
+    channel.basic_ack(m.delivery_tag)
+    print('[x] got results: ', body)
+
+
+############### main ##################
 
 
 # setting up the connection
@@ -112,70 +214,30 @@ channel.queue_bind(queue='new_client',
                    routing_key='new_client')
 
 
-###### tmporal - untill implementing batch data connection
-from keras.datasets import mnist
-import keras
-num_classes = 10
-
-# the data, shuffled and split between train and test sets
-(_, _), (x_test, y_test) = mnist.load_data()
-# input image dimensions
-img_rows, img_cols = 28, 28
-if K.image_data_format() == 'channels_first':
-    x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
-    input_shape = (1, img_rows, img_cols)
-else:
-    x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
-    input_shape = (img_rows, img_cols, 1)
-
-x_test = x_test.astype('float32')
-x_test /= 255
-# convert class vectors to binary class matrices
-y_test = keras.utils.to_categorical(y_test, num_classes)
-
-###### end of temporal part
-
-
-
-def send_model(client_name):
-    fn_txt = "".join(inspect.getsourcelines(build_model)[0])
-    data = dict(fn=fn_txt)
-    channel.basic_publish(exchange='pika',
-                          routing_key='model_build '+client_name,
-                          body=json.dumps(data))
-    print(" [x] Sent nn model to {}".format(client_name))
-
-
-def send_weights(weights,batch_num):
-    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num)
-    channel.basic_publish(exchange='pika',
-                          routing_key='requests',
-                          body=json.dumps(data))
-    print(" [x] Sent weights calculation request")
-
-
-def recieved_results(m, body):
-    channel.basic_ack(m.delivery_tag)
-    print('[x] got results: ', body)
-
-
-############### main ##################
 try:
     mode = sys.argv[1]
 except:
     mode = None
+
+try:
+    dataset = sys.argv[2]
+except:
+    dataset = 'mnist'
+
+
         
 if mode=='debug':
-    model = build_model()
+    model = build_model(dataset, mode = 'server')
     model.summary()
 elif mode=='train':
-    model = build_model()
+    model = build_model(dataset, mode = 'server')
     print('Server setup done')
-    max_batch_num = 600
+    max_batch_num = 500 # sould be 600 for mnist
     batch_num = 0
     on_epoch_end = False
     test_loss = [model.test_on_batch(x_test,y_test)]
-    timestamp = [time.clock()]
+    start_time = time.time()
+    timestamp = [0]
     while True:
         
         # check for new client and respond if exist
@@ -183,7 +245,7 @@ elif mode=='train':
         if m:
             data = json.loads(body.decode('utf-8'))
             client_name = data['name']
-            send_model(client_name)
+            send_model(client_name, dataset)
 
         # check reade queue and send current weights and train batch if exist
         m, _, body = channel.basic_get(queue='ready', no_ack=True)
@@ -207,7 +269,7 @@ elif mode=='train':
             model.set_weights(weightsAdd(weights,diff_weights))
         elif on_epoch_end:  # meaning epoch has ended and got all results back
             test_loss.append(model.test_on_batch(x_test,y_test))
-            timestamp.append(time.clock())
+            timestamp.append(time.time() - start_time)
             with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
                 pickle.dump([test_loss, timestamp], f)
             on_epoch_end = False

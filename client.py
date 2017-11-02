@@ -23,91 +23,68 @@ def weightsDiff(W1,W2):
     return diff
 
 
-###### temporal - untill implementing batch data connection
-
-from keras.datasets import mnist
-import keras
-num_classes = 10
-
-# the data, shuffled and split between train and test sets
-(x_train, y_train), (_, _) = mnist.load_data()
-# input image dimensions
-img_rows, img_cols = 28, 28
-if K.image_data_format() == 'channels_first':
-    x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
-    input_shape = (1, img_rows, img_cols)
-else:
-    x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
-    input_shape = (img_rows, img_cols, 1)
-
-x_train = x_train.astype('float32')
-x_train /= 255
-# convert class vectors to binary class matrices
-y_train = keras.utils.to_categorical(y_train, num_classes)
-
-batch_size = 100
-global X, Y
-X=[]
-Y=[]
-
-
-for i in range(600):
-    X.append(x_train[i:(i+100),:,:,:])
-    Y.append(y_train[i:(i+100),:])
-
-
-###### end of temporal part
+global model
+X = []
+Y = []
 
 
 # this callback accure every time it train on batch 
 def train_batch_callback(ch, method, properties, body):
-    # extracting weights from json format
-    body = json.loads(body.decode('utf-8'))
-    weights = list(np.asarray(lis,dtype=np.float32) for lis in body['weights'])
-    batch_num = body['batch_num']
-    print(" [x] recieved weights from server")
+    if setup:
+        # extracting weights from json format
+        body = json.loads(body.decode('utf-8'))
+        weights = list(np.asarray(lis,dtype=np.float32) for lis in body['weights'])
+        batch_num = body['batch_num']
+        print(" [x] recieved weights from server")
     
-    # updating model weights
-    model.set_weights(weights)
-    
-    # training and calculating weights diff
-    train_loss = model.train_on_batch(X[batch_num], Y[batch_num])
-    new_weights = model.get_weights()
-    diff_weights = weightsDiff(weights,new_weights)
-    
-    # sending weights diff to server
-    data = dict(weights = list(np.array(arr).tolist() for arr in diff_weights),train_loss=np.array(train_loss).tolist(), name =name )
-    channel.basic_publish(exchange='pika',
-                          routing_key='results',
-                          body=json.dumps(data))
-    print(" [x] Sent diff_weights to server")
-    channel.basic_ack(method.delivery_tag)
-    
-    # sending ready msg to server
-    channel.basic_publish(exchange='pika',
-                      routing_key='ready',
-                      body=json.dumps(ready_msg))
+        # updating model weights
+        global model
+        model.set_weights(weights)
+        
+        # training and calculating weights diff
+        global X, Y
+        train_loss = model.train_on_batch(X[batch_num], Y[batch_num])
+        new_weights = model.get_weights()
+        diff_weights = weightsDiff(weights,new_weights)
+        
+        # sending weights diff to server
+        data = dict(weights = list(np.array(arr).tolist() for arr in diff_weights),train_loss=np.array(train_loss).tolist(), name =name )
+        channel.basic_publish(exchange='pika',
+                              routing_key='results',
+                              body=json.dumps(data))
+        print(" [x] Sent diff_weights to server")
+        channel.basic_ack(method.delivery_tag)
+        
+        # sending ready msg to server
+        channel.basic_publish(exchange='pika',
+                          routing_key='ready',
+                          body=json.dumps(ready_msg))
 
 # this callback accure when the connection between client and server is establish 
 # and responssible for building the nn model
 def build_model_callback(ch, method, properties, body):
+
     body = json.loads(body.decode('utf-8'))
-    print("recieved model from server")
+    print(" [x] recieved model from server")
 
     ns = {}
     exec(body['fn'], ns)
     build_model = ns['build_model']
+    dataset = body['dataset']
     
-    global model
-    model = build_model()
+    global model, X, Y
+    (model, X, Y) = build_model(dataset = dataset, mode = 'client')
 
     channel.basic_ack(method.delivery_tag)
     channel.basic_publish(exchange='pika',
                       routing_key='ready',
                       body=json.dumps(ready_msg))
+    global setup
+    setup = True
 
 ############# main #################
 
+setup = False
 name = sys.argv[1]
 
 connection = pika.BlockingConnection(
@@ -132,12 +109,10 @@ channel.queue_bind(queue='requests',
                    exchange='pika', 
                    routing_key='requests')
 
-global model
 
 channel.basic_consume(build_model_callback,
                       queue='model_build '+name,
                       no_ack=False)
-
 
 channel.basic_consume(train_batch_callback,
                       queue='requests',
