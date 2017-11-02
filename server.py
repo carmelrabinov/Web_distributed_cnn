@@ -6,12 +6,13 @@ import numpy as np
 import json
 import inspect
 import time
+try: import cPickle as pickle
+except: import pickle
 
 # to aviod warnings
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 import tensorflow as tf
-
 
 from keras import backend as K
 if K.backend()=='tensorflow':
@@ -111,22 +112,29 @@ channel.queue_bind(queue='new_client',
                    routing_key='new_client')
 
 
-# the method to send
+###### tmporal - untill implementing batch data connection
+from keras.datasets import mnist
+import keras
+num_classes = 10
 
-def the_script(name, n):
-    res = n * 2
-#    return "{0} * 2 = {1} [{2}]".format(n, res, name)
-    return res
+# the data, shuffled and split between train and test sets
+(_, _), (x_test, y_test) = mnist.load_data()
+# input image dimensions
+img_rows, img_cols = 28, 28
+if K.image_data_format() == 'channels_first':
+    x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+    input_shape = (1, img_rows, img_cols)
+else:
+    x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+    input_shape = (img_rows, img_cols, 1)
 
+x_test = x_test.astype('float32')
+x_test /= 255
+# convert class vectors to binary class matrices
+y_test = keras.utils.to_categorical(y_test, num_classes)
 
-#def send(num):
-#    fn_txt = "".join(inspect.getsourcelines(the_script)[0])
-#    data = dict(fn=fn_txt, data=num)
-#
-#    channel.basic_publish(exchange='pika',
-#                          routing_key='requests',
-#                          body=json.dumps(data))
-#    print(" [x] Sent '%s'" % json.dumps(data['data']))
+###### end of temporal part
+
 
 
 def send_model(client_name):
@@ -146,14 +154,12 @@ def send_weights(weights,batch_num):
     print(" [x] Sent weights calculation request")
 
 
-def recieved(m, body):
-    channel.basic_ack(m.delivery_tag)
-
 def recieved_results(m, body):
     channel.basic_ack(m.delivery_tag)
     print('[x] got results: ', body)
 
 
+############### main ##################
 try:
     mode = sys.argv[1]
 except:
@@ -165,21 +171,33 @@ if mode=='debug':
 elif mode=='train':
     model = build_model()
     print('Server setup done')
+    max_batch_num = 600
+    batch_num = 0
+    on_epoch_end = False
+    test_loss = [model.test_on_batch(x_test,y_test)]
+    timestamp = [time.clock()]
     while True:
-        batch_num = 0
+        
+        # check for new client and respond if exist
         m, _, body = channel.basic_get(queue='new_client', no_ack=True)
         if m:
             data = json.loads(body.decode('utf-8'))
             client_name = data['name']
             send_model(client_name)
 
+        # check reade queue and send current weights and train batch if exist
         m, _, body = channel.basic_get(queue='ready', no_ack=True)
-        if m:
+        if m and not on_epoch_end:
             data = json.loads(body.decode('utf-8'))
             print(' [x] recieved ready request from {}'.format(data['name']))
             weights = model.get_weights()
             send_weights(weights,batch_num)
             batch_num = batch_num + 1
+            if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
+                batch_num=0
+                on_epoch_end = True
+
+        # check results queue and update model weights if exist
         m, _, body = channel.basic_get(queue='results', no_ack=False)
         if m:
             data = json.loads(body.decode('utf-8'))
@@ -187,9 +205,17 @@ elif mode=='train':
             diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
             weights = model.get_weights()
             model.set_weights(weightsAdd(weights,diff_weights))
+        elif on_epoch_end:  # meaning epoch has ended and got all results back
+            test_loss.append(model.test_on_batch(x_test,y_test))
+            timestamp.append(time.clock())
+            with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
+                pickle.dump([test_loss, timestamp], f)
+            on_epoch_end = False
+
+            
 
 #            recieved_results(m, body)
     #    send(randint(1, 100))
-        time.sleep(5)
+#        time.sleep(5)
 
 

@@ -8,8 +8,9 @@ run:
 	1. run the following command in powershell:
 		docker run -d -p 5672:5672 -p 15672:15672 rabbitmq:management
 	2. open propmt (can use anaconda) and enter python 3.5 env
-	3. run: python server.py
-	4. run: python client.py <clinet name>:
+	3. cd to project directory
+	4. run: python server.py
+	5. run: python client.py <clinet name>:
 
 RabbitMQ admin page
 ===================
