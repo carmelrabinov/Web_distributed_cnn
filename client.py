@@ -35,7 +35,7 @@ def train_batch_callback(ch, method, properties, body):
         body = json.loads(body.decode('utf-8'))
         weights = list(np.asarray(lis,dtype=np.float32) for lis in body['weights'])
         batch_num = body['batch_num']
-        print(" [x] recieved weights from server")
+#        print(" [x] recieved weights from server")
     
         # updating model weights
         global model
@@ -52,7 +52,7 @@ def train_batch_callback(ch, method, properties, body):
         channel.basic_publish(exchange='pika',
                               routing_key='results',
                               body=json.dumps(data))
-        print(" [x] Sent diff_weights to server")
+        print(' [x] Sent batch {} diff_weights to server'.format(batch_num))
         channel.basic_ack(method.delivery_tag)
         
         # sending ready msg to server

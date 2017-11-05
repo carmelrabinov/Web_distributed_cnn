@@ -114,15 +114,14 @@ def build_model(dataset, mode):
         (_, _), (x, y) = mnist.load_data()
 
     # preproccessing data
-    num_train, img_channels, img_rows, img_cols =  x.shape
-
-    if K.image_data_format() == 'channels_first':
-        x = x.reshape(num_train, img_channels, img_rows, img_cols)
-        input_shape = (img_channels, img_rows, img_cols)
-    else:
-        x = x.reshape(num_train, img_rows, img_cols, img_channels)
-        input_shape = (img_rows, img_cols, img_channels)
+    if dataset == 'cifar10':
+        num_train, img_channels, img_rows, img_cols =  x.shape
+    if dataset == 'mnist':
+        num_train, img_rows, img_cols =  x.shape
+        img_channels = 1
     
+    x = x.reshape(num_train, img_channels, img_rows, img_cols)
+    input_shape = (img_channels, img_rows, img_cols)
     x = x.astype('float32')/255
     # convert class vectors to binary class matrices
     y = keras.utils.to_categorical(y, num_classes)
@@ -151,7 +150,7 @@ def send_model(client_name, dataset):
     channel.basic_publish(exchange='pika',
                           routing_key='model_build '+client_name,
                           body=json.dumps(data))
-    print(" [x] Sent nn model to {}".format(client_name))
+    print(" [x] Sent cnn model to {}".format(client_name))
 
 
 def send_weights(weights,batch_num):
@@ -159,7 +158,7 @@ def send_weights(weights,batch_num):
     channel.basic_publish(exchange='pika',
                           routing_key='requests',
                           body=json.dumps(data))
-    print(" [x] Sent weights calculation request")
+#    print(" [x] Sent weights calculation request")
 
 
 def recieved_results(m, body):
@@ -234,10 +233,16 @@ elif mode=='train':
     print('Server setup done')
     max_batch_num = 500 # sould be 600 for mnist
     batch_num = 0
-    on_epoch_end = False
-    test_loss = [model.test_on_batch(x_test,y_test)]
+    batch_count = 0
+    epoch = 0
+    test_lossL = []
+    accuracyL = []
+    test_loss, accuracy = model.test_on_batch(x_test,y_test)
+    test_lossL.append(test_loss)
+    accuracyL.append(accuracy)
     start_time = time.time()
     timestamp = [0]
+    print(' [x] initial training with test loss: {}, accuracy: {}'.format(test_loss, accuracy))
     while True:
         
         # check for new client and respond if exist
@@ -249,30 +254,38 @@ elif mode=='train':
 
         # check reade queue and send current weights and train batch if exist
         m, _, body = channel.basic_get(queue='ready', no_ack=True)
-        if m and not on_epoch_end:
+        if m:
             data = json.loads(body.decode('utf-8'))
-            print(' [x] recieved ready request from {}'.format(data['name']))
+#            print(' [x] recieved ready request from {}'.format(data['name']))
             weights = model.get_weights()
             send_weights(weights,batch_num)
-            batch_num = batch_num + 1
+            batch_num += 1
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
                 batch_num=0
-                on_epoch_end = True
 
         # check results queue and update model weights if exist
         m, _, body = channel.basic_get(queue='results', no_ack=False)
         if m:
+            batch_count += 1
             data = json.loads(body.decode('utf-8'))
-            print(' [x] recieved diff_weights from {} with loss: {}'.format(data['name'],data['train_loss']))
+            print(' [x] recieved batch {} diff_weights from {} with loss: {}'.format(batch_count, data['name'],data['train_loss']))
             diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
             weights = model.get_weights()
             model.set_weights(weightsAdd(weights,diff_weights))
-        elif on_epoch_end:  # meaning epoch has ended and got all results back
-            test_loss.append(model.test_on_batch(x_test,y_test))
-            timestamp.append(time.time() - start_time)
-            with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
-                pickle.dump([test_loss, timestamp], f)
-            on_epoch_end = False
+            channel.basic_ack(m.delivery_tag)
+            if batch_count % 50 == 0:
+                test_loss, accuracy = model.test_on_batch(x_test,y_test)
+                test_lossL.append(test_loss)
+                accuracyL.append(accuracy)
+                timestamp.append(time.time() - start_time)
+                print(' [x] batch {} with test loss: {}, accuracy: {}, time: {}'.format(batch_count, test_loss, accuracy, timestamp[-1]))
+                with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
+                    pickle.dump([test_lossL, accuracyL, timestamp], f)
+            if batch_count == max_batch_num:  # meaning epoch has ended and got all results back
+                batch_count = 0
+                epoch += 1
+                print(' [x] finished epoch {}'.format(epoch))
+
 
             
 
