@@ -131,9 +131,8 @@ def build_model(dataset, mode):
         X = []
         Y = []
         for i in range(int(num_train/batch_size)):
-            X.append(x[i:(i+batch_size),:,:,:])
-            Y.append(y[i:(i+batch_size),:])
-        
+            X.append(x[(i * batch_size):((i+1) * batch_size - 1),:,:,:])
+            Y.append(y[(i * batch_size):((i+1) * batch_size - 1),:])
         return (model, X, Y)
 
     elif mode == 'server':
