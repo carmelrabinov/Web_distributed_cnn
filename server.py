@@ -26,6 +26,9 @@ def weightsAdd(W,W_diff):
         i=i+1
     return add
 
+##DEFINES:
+SEND_TO_LOGGER = -1
+
 def build_model(dataset, mode):
     
     import keras
@@ -105,12 +108,12 @@ def build_model(dataset, mode):
     if mode == 'client' and dataset == 'cifar10':
         # the data, shuffled and split between train and test sets
         (x, y), (_, _) = cifar10.load_data()
-    elif mode == 'server' and dataset == 'cifar10':
+    elif (mode == 'server' or mode == 'test') and dataset == 'cifar10':
         (_, _), (x, y) = cifar10.load_data()
     elif mode == 'client' and dataset == 'mnist':
         # the data, shuffled and split between train and test sets
         (x, y), (_, _) = mnist.load_data()
-    elif mode == 'server' and dataset == 'mnist':
+    elif (mode == 'server' or mode == 'test') and dataset == 'mnist':
         (_, _), (x, y) = mnist.load_data()
 
     # preproccessing data
@@ -134,13 +137,23 @@ def build_model(dataset, mode):
             X.append(x[(i * batch_size):((i+1) * batch_size - 1),:,:,:])
             Y.append(y[(i * batch_size):((i+1) * batch_size - 1),:])
         return (model, X, Y)
-
+    
     elif mode == 'server':
         global x_test, y_test
         y_test = y
         x_test = x
-
         return model
+    
+    elif mode == 'test':
+        print('num of images to test is: ',num_train) #Debug
+        #Debug - perform test only on a specific batch
+        test_batch_size = 1000
+        X = []
+        Y = []
+        for i in range(int(num_train/test_batch_size)):
+            X.append(x[(i * test_batch_size):((i+1) * test_batch_size - 1),:,:,:]) 
+            Y.append(y[(i * test_batch_size):((i+1) * test_batch_size - 1),:])
+        return (model,X,Y,int(num_train/test_batch_size))
 
 
 def send_model(client_name, dataset):
@@ -151,11 +164,20 @@ def send_model(client_name, dataset):
                           body=json.dumps(data))
     print(" [x] Sent cnn model to {}".format(client_name))
 
+# =============================================================================
+# def send_model2(dataset):
+#     print('sent 2')
+#     fn_txt = "".join(inspect.getsourcelines(build_model)[0])
+#     data = dict(fn=fn_txt, dataset = dataset)
+#     channel.basic_publish(exchange='pika',
+#                           routing_key='debug',
+#                           body=json.dumps(data))
+# =============================================================================
 
-def send_weights(weights,batch_num):
-    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num)
+def send_weights(weights,batch_num,rounting_key):
+    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num,time=time.time()-start_time)
     channel.basic_publish(exchange='pika',
-                          routing_key='requests',
+                          routing_key=rounting_key,
                           body=json.dumps(data))
 #    print(" [x] Sent weights calculation request")
 
@@ -184,6 +206,9 @@ channel.queue_delete(queue='results')
 channel.queue_delete(queue='requests')
 channel.queue_delete(queue='ready')
 channel.queue_delete(queue='new_client')
+channel.queue_delete(queue='model_build logger')
+channel.queue_delete(queue='logger')
+#channel.queue_delete(queue='debug')
 
 
 # this queu holds the results (diff weights) sent from the clients to the server
@@ -194,9 +219,7 @@ channel.queue_bind(queue='results',
 
 # this queu holds the server requests (a batch and current weights) sent from the server to the clients
 channel.queue_declare('requests')
-channel.queue_bind(queue='requests',
-                   exchange='pika',
-                   routing_key='requests')
+
 
 
 # this queu holds the ready statments sent by clients to the server who are ready to train
@@ -211,6 +234,17 @@ channel.queue_bind(queue='new_client',
                    exchange='pika',
                    routing_key='new_client')
 
+# this queu is for initilaising the logger
+channel.queue_declare('model_build logger')
+channel.queue_bind(queue='model_build logger',
+                   exchange='pika',
+                   routing_key='model_build logger')
+
+# this queue is for updating the logger with the latests nn
+channel.queue_declare('logger')
+channel.queue_bind(queue='logger',
+                   exchange='pika',
+                   routing_key='logger')
 
 try:
     mode = sys.argv[1]
@@ -230,19 +264,20 @@ if mode=='debug':
 elif mode=='train':
     model = build_model(dataset, mode = 'server')
     print('Server setup done')
+    #initialising the logger:
+    send_model('logger',dataset)
+    start_time = time.time()
+    send_weights(model.get_weights(),0,'logger')
+
+#    send_model2(dataset)
+
     max_batch_num = 500 # sould be 600 for mnist
     batch_num = 0
     batch_count = 0
     epoch = 0
-    test_lossL = []
-    accuracyL = []
-    test_loss, accuracy = model.test_on_batch(x_test,y_test)
-    test_lossL.append(test_loss)
-    accuracyL.append(accuracy)
-    start_time = time.time()
-    timestamp = [0]
+
     print('dataset: {}'.format(dataset))
-    print(' [x] initial training with test loss: {}, accuracy: {}'.format(test_loss, accuracy))
+#    print(' [x] initial training with test loss: {}, accuracy: {}'.format(test_loss, accuracy))
     while True:
         
         # check for new client and respond if exist
@@ -258,7 +293,7 @@ elif mode=='train':
             data = json.loads(body.decode('utf-8'))
 #            print(' [x] recieved ready request from {}'.format(data['name']))
             weights = model.get_weights()
-            send_weights(weights,batch_num)
+            send_weights(weights,batch_num,'requests')
             batch_num += 1
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
                 batch_num=0
@@ -271,16 +306,17 @@ elif mode=='train':
             print(' [x] recieved batch {} diff_weights from {} with loss: {}'.format(batch_count, data['name'],data['train_loss']))
             diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
             weights = model.get_weights()
-            model.set_weights(weightsAdd(weights,diff_weights))
+            new_weights = weightsAdd(weights,diff_weights)
+            model.set_weights(new_weights)
             channel.basic_ack(m.delivery_tag)
-            if batch_count % 50 == 0:
-                test_loss, accuracy = model.test_on_batch(x_test,y_test)
-                test_lossL.append(test_loss)
-                accuracyL.append(accuracy)
-                timestamp.append(time.time() - start_time)
-                print(' [x] batch {} with test loss: {}, accuracy: {}, time: {}'.format(batch_count, test_loss, accuracy, timestamp[-1]))
-                with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
-                    pickle.dump([test_lossL, accuracyL, timestamp], f)
+#debug            if batch_count % 50 == 0:
+            if  batch_count % 5 == 0:
+                send_weights(new_weights,0,'logger')
+                print('activated logger')
+# =============================================================================
+#                 with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
+#                     pickle.dump([test_lossL, accuracyL, timestamp], f)
+# =============================================================================
             if batch_count == max_batch_num:  # meaning epoch has ended and got all results back
                 batch_count = 0
                 epoch += 1
