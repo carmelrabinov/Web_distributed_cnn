@@ -241,6 +241,7 @@ elif mode=='train':
     accuracyL.append(accuracy)
     start_time = time.time()
     timestamp = [0]
+    print('dataset: {}'.format(dataset))
     print(' [x] initial training with test loss: {}, accuracy: {}'.format(test_loss, accuracy))
     while True:
         

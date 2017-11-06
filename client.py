@@ -84,11 +84,22 @@ def build_model_callback(ch, method, properties, body):
 
 ############# main #################
 
+try:
+    name = sys.argv[1]
+except:
+    print('need to enter client name')
+    exit()
+    
+try:
+    host = sys.argv[2]
+except:
+    host = 'localhost'
+ 
+
 setup = False
-name = sys.argv[1]
 
 connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
+    pika.ConnectionParameters(host=host))
 
 channel = connection.channel()
 
@@ -120,4 +131,21 @@ channel.basic_consume(train_batch_callback,
 
 print(' [*] Waiting for messages. To exit press CTRL+C')
 channel.start_consuming()
+
+
+a=5
+
+start = time.time()
+for i in range(30):
+    print('afgaaaaaaaaaaaaaaaaaaaaaa')
+end = time.time()
+print(end-start)
+
+start = time.time()
+for i in range(30):
+    if a > 6:
+        a += 1
+end = time.time()
+print(end-start)
+
 
