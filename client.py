@@ -99,7 +99,7 @@ except:
 setup = False
 
 connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host=host))
+    pika.ConnectionParameters(host=str(host)))
 
 channel = connection.channel()
 
@@ -131,21 +131,5 @@ channel.basic_consume(train_batch_callback,
 
 print(' [*] Waiting for messages. To exit press CTRL+C')
 channel.start_consuming()
-
-
-a=5
-
-start = time.time()
-for i in range(30):
-    print('afgaaaaaaaaaaaaaaaaaaaaaa')
-end = time.time()
-print(end-start)
-
-start = time.time()
-for i in range(30):
-    if a > 6:
-        a += 1
-end = time.time()
-print(end-start)
 
 
