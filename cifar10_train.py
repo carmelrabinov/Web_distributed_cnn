@@ -106,6 +106,8 @@ def accuracy(test_x, test_y, model):
     accuracy = float(num_correct)/result.shape[0]
     return (accuracy * 100)
 
+
+
 #Convolutional Neural Network for CIFAR-10 dataset
 # Define the model
 model = Sequential()
