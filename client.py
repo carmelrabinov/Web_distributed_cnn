@@ -35,7 +35,10 @@ def train_batch_callback(ch, method, properties, body):
         body = json.loads(body.decode('utf-8'))
         weights = list(np.asarray(lis,dtype=np.float32) for lis in body['weights'])
         batch_num = body['batch_num']
-#        print(" [x] recieved weights from server")
+        print(" [x] recieved weights from server")
+  
+        channel.basic_ack(method.delivery_tag)
+
     
         # updating model weights
         global model
@@ -53,7 +56,6 @@ def train_batch_callback(ch, method, properties, body):
                               routing_key='results',
                               body=json.dumps(data))
         print(' [x] Sent batch {} diff_weights to server'.format(batch_num))
-        channel.basic_ack(method.delivery_tag)
         
         # sending ready msg to server
         channel.basic_publish(exchange='pika',
@@ -64,14 +66,15 @@ def train_batch_callback(ch, method, properties, body):
 # and responssible for building the nn model
 def build_model_callback(ch, method, properties, body):
 
+    # extracting build_model function from json format
     body = json.loads(body.decode('utf-8'))
-    print(" [x] recieved model from server")
-
     ns = {}
     exec(body['fn'], ns)
     build_model = ns['build_model']
     dataset = body['dataset']
-    
+    print(" [x] recieved model from server")
+
+    # build nn model  
     global model, X, Y
     (model, X, Y) = build_model(dataset = dataset, mode = 'client')
 
@@ -79,6 +82,8 @@ def build_model_callback(ch, method, properties, body):
     channel.basic_publish(exchange='pika',
                       routing_key='ready',
                       body=json.dumps(ready_msg))
+    
+    # enable train_batch_callback
     global setup
     setup = True
 

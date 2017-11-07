@@ -1,18 +1,14 @@
 #!/usr/bin/env python
 import pika
 import sys
-from random import randint
 import numpy as np
 import json
 import inspect
 import time
-try: import cPickle as pickle
-except: import pickle
 
 # to aviod TF warnings
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
-import tensorflow as tf
 
 from keras import backend as K
 if K.backend()=='tensorflow':
@@ -31,7 +27,6 @@ def build_model(dataset, mode):
     import keras
     from keras.models import Sequential
     from keras.layers import Activation, Flatten, Dense, Dropout, Conv2D, MaxPooling2D
-    from keras import backend as K
 
     # Convolutional Neural Network for MNIST dataset
     if dataset == 'mnist':
@@ -159,19 +154,13 @@ def send_weights(weights,batch_num):
                           body=json.dumps(data))
 #    print(" [x] Sent weights calculation request")
 
-def send_test_weights(weights,batch_num):
-    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num)
+def send_test_weights(weights, batch_num, time):
+    data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num = batch_num, time = time)
     channel.basic_publish(exchange='pika',
                           routing_key='admin',
                           body=json.dumps(data))
 #    print(" [x] Sent weights calculation request")
 
-
-
-
-def recieved_results(m, body):
-    channel.basic_ack(m.delivery_tag)
-    print('[x] got results: ', body)
 
 
 ############### main ##################
@@ -194,6 +183,9 @@ channel.queue_delete(queue='requests')
 channel.queue_delete(queue='ready')
 channel.queue_delete(queue='new_client')
 channel.queue_delete(queue='admin')
+channel.queue_delete(queue='model_build admin')
+for i in range(10):
+    channel.queue_delete(queue='model_build '+str(i))
 
 
 
@@ -251,17 +243,12 @@ elif mode=='train':
     batch_num = 0
     batch_count = 0
     epoch = 0
-    test_lossL = []
-    accuracyL = []
-    test_loss, accuracy = model.test_on_batch(x_test,y_test)
-    test_lossL.append(test_loss)
-    accuracyL.append(accuracy)
+    
+    test_factor = 10 # define in how many batch will test the results
     start_time = time.time()
-    timestamp = [0]
     print('dataset: {}'.format(dataset))
-    print(' [x] initial training with test loss: {}, accuracy: {}'.format(test_loss, accuracy))
-    while True:
-        
+    
+    while True:      
         # check for new client and respond if exist
         m, _, body = channel.basic_get(queue='new_client', no_ack=True)
         if m:
@@ -288,27 +275,12 @@ elif mode=='train':
             print(' [x] recieved batch {} diff_weights from {} with loss: {}'.format(batch_count, data['name'],data['train_loss']))
             diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
             weights = model.get_weights()
-            model.set_weights(weightsAdd(weights,diff_weights))
+            new_weights = weightsAdd(weights,diff_weights)
+            model.set_weights(new_weights)
             channel.basic_ack(m.delivery_tag)
-            if batch_count % 4 == 0:
-                send_test_weights(weights,batch_count)
-#                test_loss, accuracy = model.test_on_batch(x_test,y_test)
-#                test_lossL.append(test_loss)
-#                accuracyL.append(accuracy)
-#                timestamp.append(time.time() - start_time)
-#                print(' [x] batch {} with test loss: {}, accuracy: {}, time: {}'.format(batch_count, test_loss, accuracy, timestamp[-1]))
-#                with open('C:\\Users\\carmelr\\projectA\\results.log', 'wb') as f:
-#                    pickle.dump([test_lossL, accuracyL, timestamp], f)
+            if batch_count % test_factor == 0:
+                send_test_weights(new_weights, batch_count, time.time() - start_time)
             if batch_count == max_batch_num:  # meaning epoch has ended and got all results back
                 batch_count = 0
                 epoch += 1
                 print(' [x] finished epoch {}'.format(epoch))
-
-
-            
-
-#            recieved_results(m, body)
-    #    send(randint(1, 100))
-#        time.sleep(5)
-
-
