@@ -2,7 +2,9 @@ results.log
 cifar10_train.py
 mnist_train.py
 optimizer_test.py
-results/*
-results/
 test_results/*
 test_results/
+test_results
+baseline/*
+baseline/
+baseline

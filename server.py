@@ -5,6 +5,11 @@ import numpy as np
 import json
 import inspect
 import time
+import argparse
+try: import cPickle as pickle
+except: import pickle
+import copy
+
 
 # to aviod TF warnings
 import os
@@ -14,13 +19,11 @@ from keras import backend as K
 if K.backend()=='tensorflow':
     K.set_image_dim_ordering("th")  
 
-def weightsAdd(W,W_diff):
-    add = W
-    i=0
-    for l1,l2 in zip(W,W_diff):
-        add[i] = l1+l2
-        i=i+1
-    return add
+#def weightsAdd(W,W_diff):
+#    i=0
+#    for l1,l2 in zip(W,W_diff):
+#        W[i] = l1+l2
+#        i=i+1
 
 def build_model(dataset, mode):
     
@@ -92,7 +95,7 @@ def build_model(dataset, mode):
         model.add(Dense(num_classes, activation='softmax'))
         
         # Compile the model
-        model.compile(optimizer='adam', 
+        model.compile(optimizer='SGD', 
                       loss='categorical_crossentropy', 
                       metrics=['accuracy'])
         
@@ -144,7 +147,7 @@ def send_model(client_name, dataset):
     channel.basic_publish(exchange='pika',
                           routing_key='model_build '+client_name,
                           body=json.dumps(data))
-    print(" [x] Sent cnn model to {}".format(client_name))
+    if logPrint: print(" [x] Sent cnn model to {}".format(client_name))
 
 
 def send_weights(weights,batch_num):
@@ -152,7 +155,19 @@ def send_weights(weights,batch_num):
     channel.basic_publish(exchange='pika',
                           routing_key='requests',
                           body=json.dumps(data))
-#    print(" [x] Sent weights calculation request")
+    if logPrint: print(" [x] Sent weights calculation request")
+
+def recieved_weights(body):
+        data = json.loads(body.decode('utf-8'))
+        if logPrint: print(' [x] recieved batch {} diff_weights from {} with loss: {}'.format(batch_count, data['name'],data['train_loss']))
+        diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
+        
+        global curr_weights
+        for i in range(len(curr_weights)):
+            curr_weights[i] += diff_weights[i]
+
+#        weightsAdd(curr_weights,diff_weights)
+
 
 def send_test_weights(weights, batch_num, time):
     data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num = batch_num, time = time)
@@ -164,89 +179,95 @@ def send_test_weights(weights, batch_num, time):
 
 
 ############### main ##################
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-dataset', type=str, default='cifar10')
+    parser.add_argument('-logPrint', action='store_true')
+    parser.add_argument('-noAdmin', action='store_true')
+    parser.add_argument('-fn', type=str, default='weights')
+    parser.add_argument('-test', type=int, default=0)
+    parser.parse_args(namespace=sys.modules['__main__'])
+    
 
 
-# setting up the connection
-print('Server is setting up...')
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
+    # setting up the connection
+    print('Server is setting up...')
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(host='localhost'))
+    channel = connection.channel()
+    
+    
+    channel.exchange_declare(exchange='pika',
+                             exchange_type='direct',
+                             durable=False,
+                             auto_delete=True)
+    
+    channel.queue_delete(queue='requests')
+    channel.queue_delete(queue='ready')
+    channel.queue_delete(queue='new_client')
+    channel.queue_delete(queue='admin')
+    channel.queue_delete(queue='results')
+    channel.queue_delete(queue='model_build admin')
+    for i in range(10):
+        channel.queue_delete(queue='model_build '+str(i))
+    
+    
+    
+    
+    # this queu holds the server requests (a batch and current weights) sent from the server to the clients
+    channel.queue_declare('requests')
+    channel.queue_bind(queue='requests',
+                       exchange='pika',
+                       routing_key='requests')
+    
+    # this queu holds the results (diff weights) sent from the clients to the server
+    channel.queue_declare('results')
+    channel.queue_bind(queue='results',
+                       exchange='pika',
+                       routing_key='results')
 
-
-channel.exchange_declare(exchange='pika',
-                         exchange_type='direct',
-                         durable=False,
-                         auto_delete=True)
-
-channel.queue_delete(queue='results')
-channel.queue_delete(queue='requests')
-channel.queue_delete(queue='ready')
-channel.queue_delete(queue='new_client')
-channel.queue_delete(queue='admin')
-channel.queue_delete(queue='model_build admin')
-for i in range(10):
-    channel.queue_delete(queue='model_build '+str(i))
-
-
-
-# this queu holds the results (diff weights) sent from the clients to the server
-channel.queue_declare('results')
-channel.queue_bind(queue='results',
-                   exchange='pika',
-                   routing_key='results')
-
-# this queu holds the server requests (a batch and current weights) sent from the server to the clients
-channel.queue_declare('requests')
-channel.queue_bind(queue='requests',
-                   exchange='pika',
-                   routing_key='requests')
-
-# this queu holds the server test requests (current weights) sent from the server to the admin for test
-channel.queue_declare('admin')
-channel.queue_bind(queue='admin',
-                   exchange='pika',
-                   routing_key='admin')
-
-
-# this queu holds the ready statments sent by clients to the server who are ready to train
-channel.queue_declare('ready')
-channel.queue_bind(queue='ready',
-                   exchange='pika',
-                   routing_key='ready')
-
-# this queu holds the ready statments sent by clients to the server who are ready to train
-channel.queue_declare('new_client')
-channel.queue_bind(queue='new_client',
-                   exchange='pika',
-                   routing_key='new_client')
-
-
-try:
-    mode = sys.argv[1]
-except:
-    mode = None
-
-try:
-    dataset = sys.argv[2]
-except:
-    dataset = 'mnist'
-
-
-        
-if mode=='debug':
+    
+    if not noAdmin:
+        # this queu holds the server test requests (current weights) sent from the server to the admin for test
+        channel.queue_declare('admin')
+        channel.queue_bind(queue='admin',
+                           exchange='pika',
+                           routing_key='admin')
+    
+    
+    # this queu holds the ready statments sent by clients to the server who are ready to train
+    channel.queue_declare('ready')
+    channel.queue_bind(queue='ready',
+                       exchange='pika',
+                       routing_key='ready')
+    
+    # this queu holds the ready statments sent by clients to the server who are ready to train
+    channel.queue_declare('new_client')
+    channel.queue_bind(queue='new_client',
+                       exchange='pika',
+                       routing_key='new_client')
+    
+    
+          
     (model, _, _) = build_model(dataset, mode = 'server')
-    model.summary()
-elif mode=='train':
-    (model, _, _) = build_model(dataset, mode = 'server')
-    print('Server setup done')
+    global curr_weights
+    curr_weights = model.get_weights()
+    if noAdmin:
+        weightsL = []
+        timeL = [0]
+        weightsL.append(curr_weights)
+    print('Server setup done\n')
+    print('=== model stats ===')
+    print('params: {}'.format(model.count_params())) 
+    print('dataset: {}'.format(dataset))
+
     max_batch_num = 500 # sould be 600 for mnist
     batch_num = 0
     batch_count = 0
     epoch = 0
     
-    test_factor = 10 # define in how many batch will test the results
     start_time = time.time()
-    print('dataset: {}'.format(dataset))
     
     while True:      
         # check for new client and respond if exist
@@ -255,32 +276,46 @@ elif mode=='train':
             data = json.loads(body.decode('utf-8'))
             client_name = data['name']
             send_model(client_name, dataset)
-
-        # check reade queue and send current weights and train batch if exist
+    
+        # check ready queue and send current weights and train batch if exist
         m, _, body = channel.basic_get(queue='ready', no_ack=True)
         if m:
-            data = json.loads(body.decode('utf-8'))
+#            data = json.loads(body.decode('utf-8'))
 #            print(' [x] recieved ready request from {}'.format(data['name']))
             batch_num += 1
-            weights = model.get_weights()
-            send_weights(weights,batch_num)
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
-                batch_num=0
-
-        # check results queue and update model weights if exist
+                batch_num=0           
+            send_weights(curr_weights,batch_num)
+#            m, _, body = channel.basic_get(queue='ready', no_ack=True)
+  
+        # check results queue and update curr weights if exist
         m, _, body = channel.basic_get(queue='results', no_ack=False)
         if m:
             batch_count += 1
-            data = json.loads(body.decode('utf-8'))
-            print(' [x] recieved batch {} diff_weights from {} with loss: {}'.format(batch_count, data['name'],data['train_loss']))
-            diff_weights = list(np.asarray(lis, dtype = np.float32) for lis in data['weights'])
-            weights = model.get_weights()
-            new_weights = weightsAdd(weights,diff_weights)
-            model.set_weights(new_weights)
+            recieved_weights(body)            
             channel.basic_ack(m.delivery_tag)
-            if batch_count % test_factor == 0:
-                send_test_weights(new_weights, batch_count, time.time() - start_time)
-            if batch_count == max_batch_num:  # meaning epoch has ended and got all results back
+#            m, _, body = channel.basic_get(queue='results', no_ack=False)
+            
+            # run on test mode: calculate weights every test batched instead of every epoch
+            if test and batch_count % test == 0:
+                if noAdmin:
+                    timeL.append(time.time() - start_time)
+                    weightsL.append(copy.deepcopy(curr_weights))
+                    with open('C:\\Users\\carmelr\\projectA\\test_results\\'+fn+'.pkl', 'wb') as f:
+                        pickle.dump([weightsL, timeL], f)
+                else:
+                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
+            
+            # meaning epoch has ended and got all results back
+            elif batch_count == max_batch_num:  
                 batch_count = 0
                 epoch += 1
                 print(' [x] finished epoch {}'.format(epoch))
+                if noAdmin:
+                    timeL.append(time.time() - start_time)
+                    weightsL.append(copy.deepcopy(curr_weights))
+                    with open('C:\\Users\\carmelr\\projectA\\test_results\\'+fn+'.pkl', 'wb') as f:
+                        pickle.dump([weightsL, timeL], f)
+                else:
+                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
+
