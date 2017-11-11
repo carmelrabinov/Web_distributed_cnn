@@ -111,7 +111,6 @@ if __name__ == '__main__':
 
     elif baseline:
 #        fn = 'baseline_results_SGD_my_computer.log'
-#        timestamp[1:] = np.asarray(timestamp[1:]) - np.asarray(timestamp[0:-1])
 
         with open('C:\\Users\carmelr\\projectA\\baseline\\'+fn, 'rb') as f:
             [lossL, accuracyL, timestamp] = pickle.load(f)                  

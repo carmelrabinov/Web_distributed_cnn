@@ -256,7 +256,7 @@ if __name__ == '__main__':
     if noAdmin:
         weightsL = []
         timeL = [0]
-        weightsL.append(curr_weights)
+        weightsL.append(copy.deepcopy(curr_weights))
     print('Server setup done\n')
     print('=== model stats ===')
     print('params: {}'.format(model.count_params())) 
@@ -271,30 +271,30 @@ if __name__ == '__main__':
     
     while True:      
         # check for new client and respond if exist
-        m, _, body = channel.basic_get(queue='new_client', no_ack=True)
-        if m:
-            data = json.loads(body.decode('utf-8'))
+        m1, _, body1 = channel.basic_get(queue='new_client', no_ack=True)
+        if m1:
+            data = json.loads(body1.decode('utf-8'))
             client_name = data['name']
             send_model(client_name, dataset)
     
         # check ready queue and send current weights and train batch if exist
-        m, _, body = channel.basic_get(queue='ready', no_ack=True)
-        if m:
-#            data = json.loads(body.decode('utf-8'))
+        m2, _, body2 = channel.basic_get(queue='ready', no_ack=True)
+        if m2:
+#            data = json.loads(body2.decode('utf-8'))
 #            print(' [x] recieved ready request from {}'.format(data['name']))
             batch_num += 1
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
                 batch_num=0           
             send_weights(curr_weights,batch_num)
-#            m, _, body = channel.basic_get(queue='ready', no_ack=True)
+#            m2, _, body = channel.basic_get(queue='ready', no_ack=True)
   
         # check results queue and update curr weights if exist
-        m, _, body = channel.basic_get(queue='results', no_ack=False)
-        if m:
+        m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
+        if m3:
             batch_count += 1
-            recieved_weights(body)            
-            channel.basic_ack(m.delivery_tag)
-#            m, _, body = channel.basic_get(queue='results', no_ack=False)
+            recieved_weights(body3)            
+            channel.basic_ack(m3.delivery_tag)
+#            m3, _, body = channel.basic_get(queue='results', no_ack=False)
             
             # run on test mode: calculate weights every test batched instead of every epoch
             if test and batch_count % test == 0:
