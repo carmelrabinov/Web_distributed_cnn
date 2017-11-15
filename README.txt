@@ -9,11 +9,14 @@ run:
 		docker run -d -p 5672:5672 -p 15672:15672 rabbitmq:management
 	2. open propmt (can use anaconda) and enter python 3.5 env (in anaconda: activate <envname>)
 	3. cd to project directory
-	4. run: python server.py <mode: train / debug> <dataset: mnist / cifar>
-	5. run: python client.py <clinet name>
+	4. run: python server.py [-dataset, defult=cifar10] [-logPrint] [-noAdmin] [-fn: file name dest] [-test: how mant batch to save each time]
+	5. run: python client.py [name] [-host, defult=loclhost] [-logPrint]
 
 RabbitMQ admin page
 ===================
 localhost:15672
 
 user/password: guest/guest
+
+
+

@@ -102,9 +102,12 @@ if __name__ == '__main__':
     parser.parse_args(namespace=sys.modules['__main__'])
 
     setup = False
-    
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host=str(host)))
+    credentials = pika.PlainCredentials('admin', 'admin')
+    parameters = pika.ConnectionParameters(host = host,
+				port = 5672,
+    				virtual_host = '/',
+				credentials = credentials)    
+    connection = pika.BlockingConnection(parameters)
     
     channel = connection.channel()
     

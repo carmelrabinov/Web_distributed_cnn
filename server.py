@@ -193,8 +193,12 @@ if __name__ == '__main__':
 
     # setting up the connection
     print('Server is setting up...')
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host='localhost'))
+    credentials = pika.PlainCredentials('admin', 'admin')
+    parameters = pika.ConnectionParameters(host = '132.68.60.181',
+				port = 5672,
+    				virtual_host = '/',
+				credentials = credentials)    
+    connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     
     
@@ -301,7 +305,7 @@ if __name__ == '__main__':
                 if noAdmin:
                     timeL.append(time.time() - start_time)
                     weightsL.append(copy.deepcopy(curr_weights))
-                    with open('C:\\Users\\carmelr\\projectA\\test_results\\'+fn+'.pkl', 'wb') as f:
+                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
                         pickle.dump([weightsL, timeL], f)
                 else:
                     send_test_weights(curr_weights, batch_count, time.time() - start_time)
@@ -314,7 +318,7 @@ if __name__ == '__main__':
                 if noAdmin:
                     timeL.append(time.time() - start_time)
                     weightsL.append(copy.deepcopy(curr_weights))
-                    with open('C:\\Users\\carmelr\\projectA\\test_results\\'+fn+'.pkl', 'wb') as f:
+                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
                         pickle.dump([weightsL, timeL], f)
                 else:
                     send_test_weights(curr_weights, batch_count, time.time() - start_time)
