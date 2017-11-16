@@ -10,6 +10,13 @@ try: import cPickle as pickle
 except: import pickle
 import copy
 
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from smtplib import SMTP
+import smtplib
+
+import matplotlib.pyplot as plt
 
 # to aviod TF warnings
 import os
@@ -24,6 +31,72 @@ if K.backend()=='tensorflow':
 #    for l1,l2 in zip(W,W_diff):
 #        W[i] = l1+l2
 #        i=i+1
+
+def send_results_via_mail(filename):
+	recipients = ['carmelrab@gmail.com','amirlivne2@gmail.com']
+	emaillist = [elem.strip().split(',') for elem in recipients]
+	msg = MIMEMultipart()
+	#msg['Subject'] = str(sys.argv[1])
+	msg['Subject'] = 'project A test results'
+	msg['From'] = 'ProjectA.results@gmail.com'
+	msg['Reply-to'] = 'ProjectA.results@gmail.com'
+	 
+	msg.preamble = 'Multipart massage.\n'
+	 
+	part = MIMEText("Hi, please find the attached file")
+	msg.attach(part)
+
+	#filename = str(sys.argv[2])
+	#filename = 'D:\\TECHNION\\projectA\\tasks.txt'
+	part = MIMEApplication(open(filename,"rb").read())
+
+	part.add_header('Content-Disposition', 'attachment', filename=filename)
+	msg.attach(part)
+	 
+	server = smtplib.SMTP("smtp.gmail.com:587")
+	server.ehlo()
+	server.starttls()
+	server.login("ProjectA.results@gmail.com", "carmelamir")
+	 
+	server.sendmail(msg['From'], emaillist , msg.as_string())
+
+def results_calculations(model,weightsL,timestamp,filename):
+    lossL = []
+    accuracyL = []
+    for weights in weightsL:
+        model.set_weights(weights)
+        loss, accuracy = model.evaluate(x_test, y_test)
+        lossL.append(loss)
+        accuracyL.append(accuracy)
+        print('loss: {}, accuracy: {}'.format(loss, accuracy))
+    
+    with open(filename+'.log', 'wb') as f2:
+        pickle.dump([lossL, accuracyL, timestamp], f2)
+    
+    send_results_via_mail(filename+'.log')
+    
+    timestamp[1:] = np.asarray(timestamp[1:]) - np.asarray(timestamp[0:-1])
+
+    fig = plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(lossL)
+    plt.title('test loss')
+    plt.ylabel('loss')
+    
+    plt.subplot(3, 1, 2)
+    plt.plot(accuracyL)
+    plt.title('test accuracy')
+    plt.ylabel('accuracy [%]')
+	   
+    plt.subplot(3, 1, 3)
+    plt.stem(timestamp)
+    plt.title('time per epoch')
+    plt.ylabel('time [sec]')
+    plt.xlabel('epoch')
+    fig.savefig(filename+'.png')
+    
+    send_results_via_mail(filename+'.png')
+ #   plt.show()
 
 def build_model(dataset, mode):
     
@@ -188,7 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('-noAdmin', action='store_true')
     parser.add_argument('-fn', type=str, default='weights')
     parser.add_argument('-test', type=int, default=0)
-    parser.add_argument('-epochs', type=int, default=40)
+    parser.add_argument('-epochs', type=int, default=100)
     parser.parse_args(namespace=sys.modules['__main__'])
     
 
@@ -277,6 +350,7 @@ if __name__ == '__main__':
     
     while True:      
         if epoch == epochs:
+            results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
             exit()        
 	# check for new client and respond if exist
         m1, _, body1 = channel.basic_get(queue='new_client', no_ack=True)
@@ -310,6 +384,7 @@ if __name__ == '__main__':
                     weightsL.append(copy.deepcopy(curr_weights))
                     with open('./test_results/'+fn+'.pkl', 'wb') as f:
                         pickle.dump([weightsL, timeL], f)
+#                    results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
                 else:
                     send_test_weights(curr_weights, batch_count, time.time() - start_time)
             

@@ -8,6 +8,13 @@ Created on Mon Nov  6 20:11:01 2017
 import sys
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from smtplib import SMTP
+import smtplib
+
 try: import cPickle as pickle
 except: import pickle
 
@@ -28,12 +35,42 @@ try: optimizer = sys.argv[2]
 except: optimizer = 'SGD'
 
 try: epochs = int(sys.argv[1])
-except: epochs = 3
+except: epochs = 50
 
    
 # Convolutional Neural Network for CIFAR-10 dataset
 from keras.datasets import cifar10
 
+
+def send_results_via_mail(filename):
+	recipients = ['carmelrab@gmail.com','amirlivne2@gmail.com']
+	emaillist = [elem.strip().split(',') for elem in recipients]
+	msg = MIMEMultipart()
+	#msg['Subject'] = str(sys.argv[1])
+	msg['Subject'] = 'project A test results'
+	msg['From'] = 'ProjectA.results@gmail.com'
+	msg['Reply-to'] = 'ProjectA.results@gmail.com'
+	 
+	msg.preamble = 'Multipart massage.\n'
+	 
+	part = MIMEText("Hi, please find the attached file")
+	msg.attach(part)
+
+	#filename = str(sys.argv[2])
+	#filename = 'D:\\TECHNION\\projectA\\tasks.txt'
+	part = MIMEApplication(open(filename,"rb").read())
+
+	part.add_header('Content-Disposition', 'attachment', filename=filename)
+	msg.attach(part)
+	 
+	server = smtplib.SMTP("smtp.gmail.com:587")
+	server.ehlo()
+	server.starttls()
+	server.login("ProjectA.results@gmail.com", "carmelamir")
+	 
+	server.sendmail(msg['From'], emaillist , msg.as_string())
+    
+    
 input_shape=(3, 32, 32)
 num_classes = 10
 
@@ -106,7 +143,7 @@ print('Done proccesseing!')
 test_lossL = []
 accuracyL = []
 
-test_loss, accuracy = model.test_on_batch(x_test,y_test)
+test_loss, accuracy = model.evaluate(x_test,y_test)
 test_lossL.append(test_loss)
 accuracyL.append(accuracy)
 timestamp = [0]
@@ -120,15 +157,37 @@ for epoch in range(epochs):
     for batch_num in range(max_batch_num):
         model.train_on_batch(X[batch_num], Y[batch_num])
     timestamp.append(time.time() - start_time)
-    test_loss, accuracy = model.test_on_batch(x_test,y_test)
+    test_loss, accuracy = model.evaluate(x_test,y_test)
     test_lossL.append(test_loss)
     accuracyL.append(accuracy)
-    print(' [x] epoch {} ended with test loss: {}, accuracy: {}, time: {}'.format(epoch, test_loss, accuracy, timestamp[-1]))
+
 
 print('Done training!')
    
-with open('C:\\Users\\carmelr\\projectA\\baseline_results.log', 'wb') as f:
+with open('.//baseline_results.log', 'wb') as f:
     pickle.dump([test_lossL, accuracyL, timestamp], f)
 print('Dumped results')
 
+fig = plt.figure()
+plt.subplot(3, 1, 1)
+plt.plot(test_lossL)
+plt.title('test loss')
+plt.ylabel('loss')
 
+plt.subplot(3, 1, 2)
+plt.plot(accuracyL)
+plt.title('test accuracy')
+plt.ylabel('accuracy [%]')
+       
+plt.subplot(3, 1, 3)
+plt.stem(timestamp)
+plt.title('time per epoch')
+plt.ylabel('time [sec]')
+plt.xlabel('epoch')
+fig.savefig('.//baseline_results.png')
+#plt.show()
+
+send_results_via_mail('baseline_results.png')
+send_results_via_mail('baseline_results.log')
+
+print('Sent results to your mail. GOODBYE!!!')
