@@ -93,7 +93,7 @@ if __name__ == '__main__':
     accuracyL = []
 
     if noAdmin:
-        with open('C:\\Users\carmelr\\projectA\\test_results\\'+fn, 'rb') as f:
+        with open('.//test_results//'+fn, 'rb') as f:
             [weightsL, timestamp] = pickle.load(f)
         
         (model, x_test, y_test) = build_model()
@@ -104,20 +104,19 @@ if __name__ == '__main__':
             lossL.append(loss)
             accuracyL.append(accuracy)
             print('loss: {}, accuracy: {}'.format(loss, accuracy))
-            
-        with open('C:\\Users\\carmelr\\projectA\\test_results\\'+fn+'.pkl', 'wb') as f2:
-            pickle.dump([lossL, accuracyL, timestamp], f2)
+            with open('.//test_results//'+fn+'.log', 'wb') as f2:
+                 pickle.dump([lossL, accuracyL, timestamp], f2)
 
 
     elif baseline:
 #        fn = 'baseline_results_SGD_my_computer.log'
 
-        with open('C:\\Users\carmelr\\projectA\\baseline\\'+fn, 'rb') as f:
+        with open('.//test_results//'+fn, 'rb') as f:
             [lossL, accuracyL, timestamp] = pickle.load(f)                  
               
 
     else:
-        with open('C:\\Users\carmelr\\projectA\\test_results\\'+fn, 'rb') as f:
+        with open('.//test_results//'+fn, 'rb') as f:
             [lossL, accuracyL, timestamp] = pickle.load(f)
     
     if timeParcing:
@@ -139,4 +138,6 @@ if __name__ == '__main__':
     plt.title('time per epoch')
     plt.ylabel('time [sec]')
     plt.xlabel('epoch')
-    fig.savefig('C:\\Users\carmelr\\projectA\\test_results\\'+fn+'.png')
+    fig.savefig('.//test_results//'+fn+'.png')
+    plt.show()
+
