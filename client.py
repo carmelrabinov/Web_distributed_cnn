@@ -40,7 +40,7 @@ def train_batch_callback(ch, method, properties, body):
   
         channel.basic_ack(method.delivery_tag)
 
-    
+        t0 = time.time()
         # updating model weights
         global model
         model.set_weights(weights)
@@ -59,7 +59,7 @@ def train_batch_callback(ch, method, properties, body):
         channel.basic_publish(exchange='pika',
                               routing_key='results',
                               body=json.dumps(data))
-        if logPrint: print(' [x] Sent batch {} diff_weights to server'.format(batch_num))
+        if logPrint: print(' [x] Sent batch {} diff_weights to server, calc time is {}'.format(batch_num, time.time() - t0))
         
         # sending ready msg to server
         channel.basic_publish(exchange='pika',

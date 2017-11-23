@@ -129,7 +129,7 @@ x_train = x_train.astype('float32')/255
 y_test = keras.utils.to_categorical(y_test, num_classes)
 y_train = keras.utils.to_categorical(y_train, num_classes)
    
-batch_size = 100
+batch_size = 250
 max_batch_num = int(num_train/batch_size)
 X = []
 Y = []

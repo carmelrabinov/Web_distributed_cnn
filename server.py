@@ -198,7 +198,7 @@ def build_model(dataset, mode):
     y = keras.utils.to_categorical(y, num_classes)
        
     if mode == 'client':
-        batch_size = 100
+        batch_size = 250
         X = []
         Y = []
         for i in range(int(num_train/batch_size)):
@@ -250,6 +250,37 @@ def send_test_weights(weights, batch_num, time):
                           body=json.dumps(data))
 #    print(" [x] Sent weights calculation request")
 
+def got_results(m, body):
+    
+    global timeL, weightsL, curr_weights, batch_count, epoch
+ 
+    batch_count += 1
+    recieved_weights(body)            
+    channel.basic_ack(m.delivery_tag)
+            
+    # run on test mode: calculate weights every test batched instead of every epoch
+    if test and batch_count % test == 0:
+        if noAdmin:
+            timeL.append(time.time() - start_time)
+            weightsL.append(copy.deepcopy(curr_weights))
+            with open('./test_results/'+fn+'.pkl', 'wb') as f:
+                pickle.dump([weightsL, timeL], f)
+#                    results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
+        else:
+            send_test_weights(curr_weights, batch_count, time.time() - start_time)
+    
+    # meaning epoch has ended and got all results back
+    elif batch_count == max_batch_num:  
+        batch_count = 0
+        epoch += 1
+        print(' [x] finished epoch {}'.format(epoch))
+        if noAdmin:
+            timeL.append(time.time() - start_time)
+            weightsL.append(copy.deepcopy(curr_weights))
+            with open('./test_results/'+fn+'.pkl', 'wb') as f:
+                pickle.dump([weightsL, timeL], f)
+        else:
+            send_test_weights(curr_weights, batch_count, time.time() - start_time)
 
 
 ############### main ##################
@@ -262,14 +293,16 @@ if __name__ == '__main__':
     parser.add_argument('-fn', type=str, default='weights')
     parser.add_argument('-test', type=int, default=0)
     parser.add_argument('-epochs', type=int, default=100)
+    parser.add_argument('-shuffle', action='store_true')
+    parser.add_argument('-host', type=str, default='132.68.60.181')
+
     parser.parse_args(namespace=sys.modules['__main__'])
     
-
 
     # setting up the connection
     print('Server is setting up...')
     credentials = pika.PlainCredentials('admin', 'admin')
-    parameters = pika.ConnectionParameters(host = '132.68.60.181',
+    parameters = pika.ConnectionParameters(host = host,
 				port = 5672,
     				virtual_host = '/',
 				credentials = credentials)    
@@ -290,8 +323,6 @@ if __name__ == '__main__':
     channel.queue_delete(queue='model_build admin')
     for i in range(10):
         channel.queue_delete(queue='model_build '+str(i))
-    
-    
     
     
     # this queu holds the server requests (a batch and current weights) sent from the server to the clients
@@ -340,19 +371,59 @@ if __name__ == '__main__':
     print('=== model stats ===')
     print('params: {}'.format(model.count_params())) 
     print('dataset: {}'.format(dataset))
-
-    max_batch_num = 500 # sould be 600 for mnist
+    
+    global max_batch_num,batch_num, batch_count, epoch, start_time
+    
+    max_batch_num = 200 # sould be 600 for mnist
     batch_num = 0
     batch_count = 0
     epoch = 0
     
     start_time = time.time()
-    
+  
+    s = np.arange(max_batch_num)
+            
     while True:      
+        
+        # check if train is ended
         if epoch == epochs:
             results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
             exit()        
-	# check for new client and respond if exist
+        
+        # check results queue and update curr weights if exist
+        m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
+        while m3:
+            got_results(m3, body3)
+#            batch_count += 1
+#            recieved_weights(body3)            
+#            channel.basic_ack(m3.delivery_tag)
+#                        
+#            # run on test mode: calculate weights every test batched instead of every epoch
+#            if test and batch_count % test == 0:
+#                if noAdmin:
+#                    timeL.append(time.time() - start_time)
+#                    weightsL.append(copy.deepcopy(curr_weights))
+#                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
+#                        pickle.dump([weightsL, timeL], f)
+##                    results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
+#                else:
+#                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
+#            
+#            # meaning epoch has ended and got all results back
+#            elif batch_count == max_batch_num:  
+#                batch_count = 0
+#                epoch += 1
+#                print(' [x] finished epoch {}'.format(epoch))
+#                if noAdmin:
+#                    timeL.append(time.time() - start_time)
+#                    weightsL.append(copy.deepcopy(curr_weights))
+#                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
+#                        pickle.dump([weightsL, timeL], f)
+#                else:
+#                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
+            m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
+     
+        # check for new client and respond if exist
         m1, _, body1 = channel.basic_get(queue='new_client', no_ack=True)
         if m1:
             data = json.loads(body1.decode('utf-8'))
@@ -361,43 +432,18 @@ if __name__ == '__main__':
     
         # check ready queue and send current weights and train batch if exist
         m2, _, body2 = channel.basic_get(queue='ready', no_ack=True)
-        while m2:
+        if m2:
+            m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
+            if m3:
+                got_results(m3, body3)
+
 #            data = json.loads(body2.decode('utf-8'))
 #            print(' [x] recieved ready request from {}'.format(data['name']))
             batch_num += 1
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
-                batch_num=0           
-            send_weights(curr_weights,batch_num)
-            m2, _, body2 = channel.basic_get(queue='ready', no_ack=True)
+                batch_num=0
+                if shuffle:
+                    np.random.shuffle(s)  # shuffle the order of the batches in each epoch
+            send_weights(curr_weights,int(s[batch_num]))
+#            m2, _, body2 = channel.basic_get(queue='ready', no_ack=True)
   
-        # check results queue and update curr weights if exist
-        m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
-        while m3:
-            batch_count += 1
-            recieved_weights(body3)            
-            channel.basic_ack(m3.delivery_tag)
-                        
-            # run on test mode: calculate weights every test batched instead of every epoch
-            if test and batch_count % test == 0:
-                if noAdmin:
-                    timeL.append(time.time() - start_time)
-                    weightsL.append(copy.deepcopy(curr_weights))
-                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
-                        pickle.dump([weightsL, timeL], f)
-#                    results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
-                else:
-                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
-            
-            # meaning epoch has ended and got all results back
-            elif batch_count == max_batch_num:  
-                batch_count = 0
-                epoch += 1
-                print(' [x] finished epoch {}'.format(epoch))
-                if noAdmin:
-                    timeL.append(time.time() - start_time)
-                    weightsL.append(copy.deepcopy(curr_weights))
-                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
-                        pickle.dump([weightsL, timeL], f)
-                else:
-                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
-            m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
