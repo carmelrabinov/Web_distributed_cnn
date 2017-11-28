@@ -26,12 +26,6 @@ from keras import backend as K
 if K.backend()=='tensorflow':
     K.set_image_dim_ordering("th")  
 
-#def weightsAdd(W,W_diff):
-#    i=0
-#    for l1,l2 in zip(W,W_diff):
-#        W[i] = l1+l2
-#        i=i+1
-
 def send_results_via_mail(filename):
 	recipients = ['carmelrab@gmail.com','amirlivne2@gmail.com']
 	emaillist = [elem.strip().split(',') for elem in recipients]
@@ -103,6 +97,7 @@ def build_model(dataset, mode):
     import keras
     from keras.models import Sequential
     from keras.layers import Activation, Flatten, Dense, Dropout, Conv2D, MaxPooling2D
+    from keras.optimizers import SGD
 
     # Convolutional Neural Network for MNIST dataset
     if dataset == 'mnist':
@@ -140,35 +135,30 @@ def build_model(dataset, mode):
         
         # Define the model
         model = Sequential()
-        model.add(Conv2D(48, (3, 3), padding="same", input_shape=input_shape))
+        model.add(Conv2D(32, (3, 3), padding='same',
+                         input_shape=input_shape))
         model.add(Activation('relu'))
-        model.add(Conv2D(48, (3, 3)))
-        model.add(Activation('relu'))
-        model.add(MaxPooling2D(pool_size=(2, 2)))
-        model.add(Dropout(0.25))
-        model.add(Conv2D(96, (3, 3), padding="same"))
-        model.add(Activation('relu'))
-        model.add(Conv2D(96, (3, 3)))
+        model.add(Conv2D(32, (3, 3)))
         model.add(Activation('relu'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
         model.add(Dropout(0.25))
-        model.add(Conv2D(192, (3, 3), padding="same"))
+        
+        model.add(Conv2D(64, (3, 3), padding='same'))
         model.add(Activation('relu'))
-        model.add(Conv2D(192, (3, 3)))
+        model.add(Conv2D(64, (3, 3)))
         model.add(Activation('relu'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
         model.add(Dropout(0.25))
+        
         model.add(Flatten())
         model.add(Dense(512))
         model.add(Activation('relu'))
         model.add(Dropout(0.5))
-        model.add(Dense(256))
-        model.add(Activation('relu'))
-        model.add(Dropout(0.5))
-        model.add(Dense(num_classes, activation='softmax'))
+        model.add(Dense(num_classes))
+        model.add(Activation('softmax'))
         
         # Compile the model
-        model.compile(optimizer='SGD', 
+        model.compile(optimizer=SGD(lr=0.05, momentum=0.0, decay=0.0, nesterov=False), 
                       loss='categorical_crossentropy', 
                       metrics=['accuracy'])
         
@@ -394,33 +384,6 @@ if __name__ == '__main__':
         m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
         while m3:
             got_results(m3, body3)
-#            batch_count += 1
-#            recieved_weights(body3)            
-#            channel.basic_ack(m3.delivery_tag)
-#                        
-#            # run on test mode: calculate weights every test batched instead of every epoch
-#            if test and batch_count % test == 0:
-#                if noAdmin:
-#                    timeL.append(time.time() - start_time)
-#                    weightsL.append(copy.deepcopy(curr_weights))
-#                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
-#                        pickle.dump([weightsL, timeL], f)
-##                    results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
-#                else:
-#                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
-#            
-#            # meaning epoch has ended and got all results back
-#            elif batch_count == max_batch_num:  
-#                batch_count = 0
-#                epoch += 1
-#                print(' [x] finished epoch {}'.format(epoch))
-#                if noAdmin:
-#                    timeL.append(time.time() - start_time)
-#                    weightsL.append(copy.deepcopy(curr_weights))
-#                    with open('./test_results/'+fn+'.pkl', 'wb') as f:
-#                        pickle.dump([weightsL, timeL], f)
-#                else:
-#                    send_test_weights(curr_weights, batch_count, time.time() - start_time)
             m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
      
         # check for new client and respond if exist

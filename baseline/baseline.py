@@ -29,10 +29,8 @@ if K.backend()=='tensorflow':
 import keras
 from keras.models import Sequential
 from keras.layers import Activation, Flatten, Dense, Dropout, Conv2D, MaxPooling2D
+from keras.optimizers import SGD
    
-
-try: optimizer = sys.argv[2]
-except: optimizer = 'SGD'
 
 try: epochs = int(sys.argv[1])
 except: epochs = 50
@@ -77,35 +75,30 @@ num_classes = 10
 
 # Define the model
 model = Sequential()
-model.add(Conv2D(48, (3, 3), padding="same", input_shape=input_shape))
+model.add(Conv2D(32, (3, 3), padding='same',
+                 input_shape=input_shape))
 model.add(Activation('relu'))
-model.add(Conv2D(48, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Dropout(0.25))
-model.add(Conv2D(96, (3, 3), padding="same"))
-model.add(Activation('relu'))
-model.add(Conv2D(96, (3, 3)))
+model.add(Conv2D(32, (3, 3)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 model.add(Dropout(0.25))
-model.add(Conv2D(192, (3, 3), padding="same"))
+
+model.add(Conv2D(64, (3, 3), padding='same'))
 model.add(Activation('relu'))
-model.add(Conv2D(192, (3, 3)))
+model.add(Conv2D(64, (3, 3)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
 model.add(Dropout(0.25))
+
 model.add(Flatten())
 model.add(Dense(512))
 model.add(Activation('relu'))
 model.add(Dropout(0.5))
-model.add(Dense(256))
-model.add(Activation('relu'))
-model.add(Dropout(0.5))
-model.add(Dense(num_classes, activation='softmax'))
+model.add(Dense(num_classes))
+model.add(Activation('softmax'))
 
 # Compile the model
-model.compile(optimizer='adam', 
+model.compile(optimizer=SGD(lr=0.05, momentum=0.0, decay=0.0, nesterov=False), 
               loss='categorical_crossentropy', 
               metrics=['accuracy'])
 
@@ -151,6 +144,7 @@ print('initial are test loss: {}, accuracy: {}'.format(test_loss, accuracy))
 
 
 start_time = time.time()
+
 
 print('Start training...')
 for epoch in range(epochs):
