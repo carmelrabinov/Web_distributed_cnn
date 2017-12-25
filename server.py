@@ -283,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument('-noAdmin', action='store_true')
     parser.add_argument('-fn', type=str, default='weights')
     parser.add_argument('-test', type=int, default=0)
-    parser.add_argument('-epochs', type=int, default=70)
+    parser.add_argument('-epochs', type=int, default=100)
     parser.add_argument('-host', type=str, default='132.68.60.181')
 
     parser.parse_args(namespace=sys.modules['__main__'])
@@ -406,7 +406,8 @@ if __name__ == '__main__':
         if ready_counter > 0:       
             batch_num += 1
             if batch_num == max_batch_num/2:
-                print("working on batch ",batch_num)
+#                print("working on batch {}, time: {}".format(batch_num, time.time())-start_time)
+                print("working on batch  ", batch_num)
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
                 batch_num=0
                 np.random.shuffle(s)  # shuffle the order of the batches in each epoch
