@@ -6,19 +6,19 @@ This project was performed in the Networked Software System Laboratory in the El
 
 ## Project results:
 The project was implemented using the CIFAR10 dataset and all results are with respect to this dataset.
-The weight og the cnn were updated using async SGD method as in the following figure:
+The weight were updated using async SGD method as in the following figure:
 
-![alt text](https://raw.githubusercontent.com/carmelrabinov/Web_distributed_cnn/master/pictures/async_sgd.png)
+![Screenshot](pictures/async_sgd.png)
 
 We achived best performance using 3 client as seen in the following figures:
 
-![alt text](https://raw.githubusercontent.com/carmelrabinov/Web_distributed_cnn/master/results/graphs/accuracy_per_time.png)
+![Screenshot](results/graphs/time_to_70.png)
 
-![alt text](https://raw.githubusercontent.com/carmelrabinov/Web_distributed_cnn/master/results/graphs/accuracy_per_epoch.png)
+![Screenshot](results/graphs/accuracy_per_time.png)
 
-![alt text](https://raw.githubusercontent.com/carmelrabinov/Web_distributed_cnn/master/results/graphs/time_to_70.png)
+![Screenshot](results/graphs/accuracy_per_epoch.png)
 
-for detail results please read the PDF document
+for detailed results please read the PDF document
 
 ## Installation:
 1. install docker for windows or rabbitmq-server for Ubuntu
