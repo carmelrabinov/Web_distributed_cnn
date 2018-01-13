@@ -246,15 +246,15 @@ def got_results(m, body):
  
     batch_count += 1
     recieved_weights(body)            
-    channel.basic_ack(m.delivery_tag)
             
     # run on test mode: calculate weights every test batched instead of every epoch
     if test and batch_count % test == 0:
         if noAdmin:
-            timeL.append(time.time() - start_time)
-            weightsL.append(copy.deepcopy(curr_weights))
-            with open('./test_results/'+fn+'.pkl', 'wb') as f:
-                pickle.dump([weightsL, timeL], f)
+            curr_time = time.time() - start_time
+            timeL.append(curr_time)
+#            weightsL.append(copy.deepcopy(curr_weights))
+            with open('./test_results/'+fn+'/'+str(epoch)+'.pkl', 'wb') as f:
+                pickle.dump([curr_weights, curr_time], f)
 #                    results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
         else:
             send_test_weights(curr_weights, batch_count, time.time() - start_time)
@@ -265,10 +265,11 @@ def got_results(m, body):
         epoch += 1
         print(' [x] finished epoch {}'.format(epoch))
         if noAdmin:
-            timeL.append(time.time() - start_time)
-            weightsL.append(copy.deepcopy(curr_weights))
-            with open('./test_results/'+fn+'.pkl', 'wb') as f:
-                pickle.dump([weightsL, timeL], f)
+            curr_time = time.time() - start_time
+            timeL.append(curr_time)
+#            weightsL.append(copy.deepcopy(curr_weights))
+            with open('./test_results/'+fn+'/'+str(epoch)+'.pkl', 'wb') as f:
+                pickle.dump([curr_weights, curr_time], f)
         else:
             send_test_weights(curr_weights, batch_count, time.time() - start_time)
 
@@ -283,7 +284,6 @@ if __name__ == '__main__':
     parser.add_argument('-fn', type=str, default='weights')
     parser.add_argument('-test', type=int, default=0)
     parser.add_argument('-epochs', type=int, default=100)
-    parser.add_argument('-shuffle', action='store_true')
     parser.add_argument('-host', type=str, default='132.68.60.181')
 
     parser.parse_args(namespace=sys.modules['__main__'])
@@ -348,15 +348,19 @@ if __name__ == '__main__':
                        exchange='pika',
                        routing_key='new_client')
     
-    
+    if not os.path.exists('./test_results/'+fn):
+        os.makedirs('./test_results/'+fn)
           
     (model, _, _) = build_model(dataset, mode = 'server')
     global curr_weights
     curr_weights = model.get_weights()
     if noAdmin:
-        weightsL = []
+#        weightsL = []
         timeL = [0]
-        weightsL.append(copy.deepcopy(curr_weights))
+#        weightsL.append(copy.deepcopy(curr_weights))
+        with open('./test_results/'+fn+'/'+str(0)+'.pkl', 'wb') as f:
+            pickle.dump([curr_weights,0], f)
+
     print('Server setup done\n')
     print('=== model stats ===')
     print('params: {}'.format(model.count_params())) 
@@ -372,41 +376,44 @@ if __name__ == '__main__':
     start_time = time.time()
   
     s = np.arange(max_batch_num)
-            
+    
+    ready_counter = 0
+       
     while True:      
         
         # check if train is ended
         if epoch == epochs:
-            results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
+#            results_calculations(model,weightsL,timeL,'.//test_results//'+fn)
             exit()        
-        
-        # check results queue and update curr weights if exist
-        m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
-        while m3:
-            got_results(m3, body3)
-            m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
-     
+
         # check for new client and respond if exist
         m1, _, body1 = channel.basic_get(queue='new_client', no_ack=True)
-        if m1:
+        while m1:
             data = json.loads(body1.decode('utf-8'))
             client_name = data['name']
             send_model(client_name, dataset)
-    
+            ready_counter += 1
+            m1, _, body1 = channel.basic_get(queue='new_client', no_ack=True)
+        
+        # check results queue and update curr weights if exist
+        m3, _, body3 = channel.basic_get(queue='results', no_ack=True)
+        while m3:
+            got_results(m3, body3)
+            ready_counter += 1
+            m3, _, body3 = channel.basic_get(queue='results', no_ack=True)
+                
         # check ready queue and send current weights and train batch if exist
-        m2, _, body2 = channel.basic_get(queue='ready', no_ack=True)
-        if m2:
-            m3, _, body3 = channel.basic_get(queue='results', no_ack=False)
-            if m3:
-                got_results(m3, body3)
-
-#            data = json.loads(body2.decode('utf-8'))
-#            print(' [x] recieved ready request from {}'.format(data['name']))
+        if ready_counter > 0:       
             batch_num += 1
+            if batch_num == max_batch_num/2:
+#                print("working on batch {}, time: {}".format(batch_num, time.time())-start_time)
+                print("working on batch  ", batch_num)
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
                 batch_num=0
-                if shuffle:
-                    np.random.shuffle(s)  # shuffle the order of the batches in each epoch
+                np.random.shuffle(s)  # shuffle the order of the batches in each epoch
             send_weights(curr_weights,int(s[batch_num]))
-#            m2, _, body2 = channel.basic_get(queue='ready', no_ack=True)
+            ready_counter -= 1
+
+            
+
   

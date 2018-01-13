@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import argparse
 try: import cPickle as pickle
 except: import pickle
+import os
 
 
 def send_results_via_mail(filename):
@@ -112,6 +113,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('fn', help='file name')
+    parser.add_argument('dn', help='directory name')
+
     parser.add_argument('-noAdmin', action='store_true')
     parser.add_argument('-baseline', action='store_true')
     parser.add_argument('-timeParcing', action='store_true')
@@ -119,12 +122,19 @@ if __name__ == '__main__':
  
     lossL = []
     accuracyL = []
-
+    weightsL = []
+    timestamp = []
+    
+    directory = './/test_results//'+fn
+        
     if noAdmin:
-        with open('.//test_results//'+fn, 'rb') as f:
-            [weightsL, timestamp] = pickle.load(f)
-        
-        
+        for filename in os.listdir(directory):
+            with open('.//test_results//'+dn+'//' + filename, 'rb') as f:
+                [w, t] = pickle.load(f)
+            weightsL.append(w)
+            timestamp.append(t)
+            print("loaded ", filename)
+            
         (model, x_test, y_test) = build_model()
         print("lodaed model")
         

@@ -15,19 +15,9 @@ from keras import backend as K
 if K.backend()=='tensorflow':
     K.set_image_dim_ordering("th")  
 
-#def weightsDiff(W1,W2):
-#    diff = W1
-#    i=0
-#    for l1,l2 in zip(W1,W2):
-#        diff[i] = l2-l1
-#        i=i+1
-#    return diff
-
-
 global model
 X = []
 Y = []
-
 
 # this callback accure every time it train on batch 
 def train_batch_callback(ch, method, properties, body):
@@ -38,22 +28,16 @@ def train_batch_callback(ch, method, properties, body):
         batch_num = body['batch_num']
         if logPrint: print(" [x] recieved weights from server")
   
-        channel.basic_ack(method.delivery_tag)
-
-        t0 = time.time()
         # updating model weights
         global model
         model.set_weights(weights)
-        
+
         # training and calculating weights diff
         global X, Y
         train_loss = model.train_on_batch(X[batch_num], Y[batch_num])
         diff_weights = model.get_weights()
         for i in range(len(weights)):
             diff_weights[i] -= weights[i]
-        
-#        diff_weights = weightsDiff(weights,new_weights)
-        
         # sending weights diff to server
         data = dict(weights = list(np.array(arr).tolist() for arr in diff_weights),train_loss=np.array(train_loss).tolist(), name =name )
         channel.basic_publish(exchange='pika',
@@ -61,11 +45,6 @@ def train_batch_callback(ch, method, properties, body):
                               body=json.dumps(data))
         if logPrint: print(' [x] Sent batch {} diff_weights to server, calc time is {}'.format(batch_num, time.time() - t0))
         
-        # sending ready msg to server
-        channel.basic_publish(exchange='pika',
-                          routing_key='ready',
-                          body=json.dumps(ready_msg))
-
 # this callback accure when the connection between client and server is establish 
 # and responssible for building the nn model
 def build_model_callback(ch, method, properties, body):
@@ -81,11 +60,6 @@ def build_model_callback(ch, method, properties, body):
     # build nn model  
     global model, X, Y
     (model, X, Y) = build_model(dataset = dataset, mode = 'client')
-
-    channel.basic_ack(method.delivery_tag)
-    channel.basic_publish(exchange='pika',
-                      routing_key='ready',
-                      body=json.dumps(ready_msg))
     
     # enable train_batch_callback
     global setup
@@ -97,7 +71,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('name', help='client uniqe name')
-    parser.add_argument('-host', type=str, default='localhost')
+    parser.add_argument('-host', type=str, default='132.68.60.181')
     parser.add_argument('-logPrint', action='store_true')
     parser.parse_args(namespace=sys.modules['__main__'])
 
@@ -131,11 +105,11 @@ if __name__ == '__main__':
     
     channel.basic_consume(build_model_callback,
                           queue='model_build '+name,
-                          no_ack=False)
+                          no_ack=True)
     
     channel.basic_consume(train_batch_callback,
                           queue='requests',
-                          no_ack=False)
+                          no_ack=True)
     
     print(' [*] Waiting for messages. To exit press CTRL+C')
     channel.start_consuming()

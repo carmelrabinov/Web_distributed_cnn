@@ -33,7 +33,7 @@ from keras.optimizers import SGD
    
 
 try: epochs = int(sys.argv[1])
-except: epochs = 50
+except: epochs = 100
 
    
 # Convolutional Neural Network for CIFAR-10 dataset
@@ -136,10 +136,13 @@ print('Done proccesseing!')
 test_lossL = []
 accuracyL = []
 
+#test_loss, accuracy = model.evaluate(x_test,y_test)
+#test_lossL.append(test_loss)
+#accuracyL.append(accuracy)
+timestamp = [0]
 test_loss, accuracy = model.evaluate(x_test,y_test)
 test_lossL.append(test_loss)
 accuracyL.append(accuracy)
-timestamp = [0]
 print('initial are test loss: {}, accuracy: {}'.format(test_loss, accuracy))
 
 
@@ -150,17 +153,21 @@ print('Start training...')
 for epoch in range(epochs):
     for batch_num in range(max_batch_num):
         model.train_on_batch(X[batch_num], Y[batch_num])
-    timestamp.append(time.time() - start_time)
     test_loss, accuracy = model.evaluate(x_test,y_test)
     test_lossL.append(test_loss)
     accuracyL.append(accuracy)
+    timestamp.append(time.time() - start_time)
+    print("finished epoch: ", epoch + 1)
+
+#    test_loss, accuracy = model.evaluate(x_test,y_test)
+#    test_lossL.append(test_loss)
+#    accuracyL.append(accuracy)
 
 
 print('Done training!')
    
-with open('.//baseline_results.log', 'wb') as f:
+with open('//home//carmelrab//web_distributed_dnn//baseline//baseline_results.log', 'wb') as f:
     pickle.dump([test_lossL, accuracyL, timestamp], f)
-print('Dumped results')
 
 fig = plt.figure()
 plt.subplot(3, 1, 1)
@@ -178,7 +185,7 @@ plt.stem(timestamp)
 plt.title('time per epoch')
 plt.ylabel('time [sec]')
 plt.xlabel('epoch')
-fig.savefig('.//baseline_results.png')
+fig.savefig('//home//carmelrab//web_distributed_dnn//baseline//baseline_results.png')
 #plt.show()
 
 send_results_via_mail('baseline_results.png')
