@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 import pika
 import sys
+import os
 import json
 import numpy as np
 try: import cPickle as pickle
 except: import pickle
+from keras import backend as K
 
 # to aviod warnings
-import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
-from keras import backend as K
 if K.backend()=='tensorflow':
     K.set_image_dim_ordering("th")  
 
@@ -35,8 +35,6 @@ def test_callback(ch, method, properties, body):
 
         channel.basic_ack(method.delivery_tag)
 
-#        print(" [x] recieved weights from server")
-    
         # updating model weights
         global model
         model.set_weights(weights)
@@ -83,9 +81,7 @@ def build_model_callback(ch, method, properties, body):
     global setup
     setup = True
 
-############# main #################
 
-   
 #try:
 #    host = sys.argv[1]
 #except:
@@ -105,31 +101,17 @@ connection = pika.BlockingConnection(
 
 channel = connection.channel()
 
-
 channel.queue_declare('model_build '+name)
-channel.queue_bind(queue='model_build '+name,
-                   exchange='pika',
-                   routing_key='model_build '+name)
+channel.queue_bind(queue='model_build '+name, exchange='pika', routing_key='model_build '+name)
 
 # new_client annoncment
-ready_msg = dict(name=name, device = 'pc')
-channel.basic_publish(exchange='pika',
-                      routing_key='new_client',
-                      body=json.dumps(ready_msg))
+ready_msg = dict(name=name, device='pc')
+channel.basic_publish(exchange='pika', routing_key='new_client', body=json.dumps(ready_msg))
 
+channel.queue_bind(queue='admin', exchange='pika', routing_key='admin')
 
-channel.queue_bind(queue='admin', 
-                   exchange='pika', 
-                   routing_key='admin')
-
-
-channel.basic_consume(build_model_callback,
-                      queue='model_build '+name,
-                      no_ack=False)
-
-channel.basic_consume(test_callback,
-                      queue='admin',
-                      no_ack=False)
+channel.basic_consume(build_model_callback, queue='model_build '+name, no_ack=False)
+channel.basic_consume(test_callback, queue='admin', no_ack=False)
 
 print(' [*] Waiting for messages. To exit press CTRL+C')
 channel.start_consuming()

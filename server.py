@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-import pika
 import sys
+import os
 import numpy as np
 import json
 import inspect
@@ -9,52 +9,42 @@ import argparse
 try: import cPickle as pickle
 except: import pickle
 import copy
-
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
-from smtplib import SMTP
 import smtplib
-
 import matplotlib.pyplot as plt
+from keras import backend as K
+import pika
 
-# to aviod TF warnings
-import os
+# to avoid TF warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
-from keras import backend as K
-if K.backend()=='tensorflow':
+if K.backend() == 'tensorflow':
     K.set_image_dim_ordering("th")  
 
+
 def send_results_via_mail(filename):
-	recipients = ['carmelrab@gmail.com','amirlivne2@gmail.com']
-	emaillist = [elem.strip().split(',') for elem in recipients]
-	msg = MIMEMultipart()
-	#msg['Subject'] = str(sys.argv[1])
-	msg['Subject'] = 'project A test results'
-	msg['From'] = 'ProjectA.results@gmail.com'
-	msg['Reply-to'] = 'ProjectA.results@gmail.com'
-	 
-	msg.preamble = 'Multipart massage.\n'
-	 
-	part = MIMEText("Hi, please find the attached file")
-	msg.attach(part)
+    recipients = ['carmelrab@gmail.com', 'amirlivne2@gmail.com']
+    emaillist = [elem.strip().split(',') for elem in recipients]
+    msg = MIMEMultipart()
+    msg['Subject'] = 'project A test results'
+    msg['From'] = 'ProjectA.results@gmail.com'
+    msg['Reply-to'] = 'ProjectA.results@gmail.com'
+    msg.preamble = 'Multipart massage.\n'
+    part = MIMEText("Hi, please find the attached file")
+    msg.attach(part)
+    part = MIMEApplication(open(filename, "rb").read())
+    part.add_header('Content-Disposition', 'attachment', filename=filename)
+    msg.attach(part)
+    server = smtplib.SMTP("smtp.gmail.com:587")
+    server.ehlo()
+    server.starttls()
+    server.login("ProjectA.results@gmail.com", "carmelamir")
+    server.sendmail(msg['From'], emaillist, msg.as_string())
 
-	#filename = str(sys.argv[2])
-	#filename = 'D:\\TECHNION\\projectA\\tasks.txt'
-	part = MIMEApplication(open(filename,"rb").read())
 
-	part.add_header('Content-Disposition', 'attachment', filename=filename)
-	msg.attach(part)
-	 
-	server = smtplib.SMTP("smtp.gmail.com:587")
-	server.ehlo()
-	server.starttls()
-	server.login("ProjectA.results@gmail.com", "carmelamir")
-	 
-	server.sendmail(msg['From'], emaillist , msg.as_string())
-
-def results_calculations(model,weightsL,timestamp,filename):
+def results_calculations(model, weightsL, timestamp, filename):
     lossL = []
     accuracyL = []
     for weights in weightsL:
@@ -81,7 +71,7 @@ def results_calculations(model,weightsL,timestamp,filename):
     plt.plot(accuracyL)
     plt.title('test accuracy')
     plt.ylabel('accuracy [%]')
-	   
+
     plt.subplot(3, 1, 3)
     plt.stem(timestamp)
     plt.title('time per epoch')
@@ -90,7 +80,7 @@ def results_calculations(model,weightsL,timestamp,filename):
     fig.savefig(filename+'.png')
     
     send_results_via_mail(filename+'.png')
- #   plt.show()
+
 
 def build_model(dataset, mode):
     
@@ -123,8 +113,7 @@ def build_model(dataset, mode):
         model.compile(loss='categorical_crossentropy',
                       optimizer='adadelta',
                       metrics=['accuracy'])
-    
-   
+
     # Convolutional Neural Network for CIFAR-10 dataset
     elif dataset == 'cifar10':
         from keras.datasets import cifar10
@@ -132,7 +121,6 @@ def build_model(dataset, mode):
         input_shape=(3, 32, 32)
         num_classes = 10
 
-        
         # Define the model
         model = Sequential()
         model.add(Conv2D(32, (3, 3), padding='same',
@@ -210,16 +198,16 @@ def send_model(client_name, dataset):
     channel.basic_publish(exchange='pika',
                           routing_key='model_build '+client_name,
                           body=json.dumps(data))
-#    if logPrint: print(" [x] Sent cnn model to {}".format(client_name))
     print(" [x] Sent cnn model to {}".format(client_name))
 
 
-def send_weights(weights,batch_num):
+def send_weights(weights, batch_num):
     data = dict(weights = list(np.array(arr).tolist() for arr in weights),batch_num=batch_num)
     channel.basic_publish(exchange='pika',
                           routing_key='requests',
                           body=json.dumps(data))
     if logPrint: print(" [x] Sent weights calculation request")
+
 
 def recieved_weights(body):
         data = json.loads(body.decode('utf-8'))
@@ -238,7 +226,7 @@ def send_test_weights(weights, batch_num, time):
     channel.basic_publish(exchange='pika',
                           routing_key='admin',
                           body=json.dumps(data))
-#    print(" [x] Sent weights calculation request")
+
 
 def got_results(m, body):
     
@@ -274,7 +262,6 @@ def got_results(m, body):
             send_test_weights(curr_weights, batch_count, time.time() - start_time)
 
 
-############### main ##################
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -288,22 +275,14 @@ if __name__ == '__main__':
 
     parser.parse_args(namespace=sys.modules['__main__'])
     
-
     # setting up the connection
     print('Server is setting up...')
     credentials = pika.PlainCredentials('admin', 'admin')
-    parameters = pika.ConnectionParameters(host = host,
-				port = 5672,
-    				virtual_host = '/',
-				credentials = credentials)    
+    parameters = pika.ConnectionParameters(host=host, port=5672, virtual_host='/', credentials=credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
-    
-    
-    channel.exchange_declare(exchange='pika',
-                             exchange_type='direct',
-                             durable=False,
-                             auto_delete=True)
+
+    channel.exchange_declare(exchange='pika', exchange_type='direct', durable=False, auto_delete=True)
     
     channel.queue_delete(queue='requests')
     channel.queue_delete(queue='ready')
@@ -313,9 +292,8 @@ if __name__ == '__main__':
     channel.queue_delete(queue='model_build admin')
     for i in range(10):
         channel.queue_delete(queue='model_build '+str(i))
-    
-    
-    # this queu holds the server requests (a batch and current weights) sent from the server to the clients
+
+    # this queue holds the server requests (a batch and current weights) sent from the server to the clients
     channel.queue_declare('requests')
     channel.queue_bind(queue='requests',
                        exchange='pika',
@@ -327,22 +305,14 @@ if __name__ == '__main__':
                        exchange='pika',
                        routing_key='results')
 
-    
     if not noAdmin:
-        # this queu holds the server test requests (current weights) sent from the server to the admin for test
+        # this queue holds the server test requests (current weights) sent from the server to the admin for test
         channel.queue_declare('admin')
         channel.queue_bind(queue='admin',
                            exchange='pika',
                            routing_key='admin')
-    
-    
-    # this queu holds the ready statments sent by clients to the server who are ready to train
-    channel.queue_declare('ready')
-    channel.queue_bind(queue='ready',
-                       exchange='pika',
-                       routing_key='ready')
-    
-    # this queu holds the ready statments sent by clients to the server who are ready to train
+
+    # this queue holds the ready statments sent by clients to the server who are ready to train
     channel.queue_declare('new_client')
     channel.queue_bind(queue='new_client',
                        exchange='pika',
@@ -351,7 +321,7 @@ if __name__ == '__main__':
     if not os.path.exists('./test_results/'+fn):
         os.makedirs('./test_results/'+fn)
           
-    (model, _, _) = build_model(dataset, mode = 'server')
+    (model, _, _) = build_model(dataset, mode='server')
     global curr_weights
     curr_weights = model.get_weights()
     if noAdmin:
@@ -366,7 +336,7 @@ if __name__ == '__main__':
     print('params: {}'.format(model.count_params())) 
     print('dataset: {}'.format(dataset))
     
-    global max_batch_num,batch_num, batch_count, epoch, start_time
+    global max_batch_num, batch_num, batch_count, epoch, start_time
     
     max_batch_num = 200 # sould be 600 for mnist
     batch_num = 0
@@ -374,9 +344,7 @@ if __name__ == '__main__':
     epoch = 0
     
     start_time = time.time()
-  
     s = np.arange(max_batch_num)
-    
     ready_counter = 0
        
     while True:      
@@ -406,7 +374,6 @@ if __name__ == '__main__':
         if ready_counter > 0:       
             batch_num += 1
             if batch_num == max_batch_num/2:
-#                print("working on batch {}, time: {}".format(batch_num, time.time())-start_time)
                 print("working on batch  ", batch_num)
             if batch_num == max_batch_num:  # epoch end (note that it doesnt mean that all results came back)
                 batch_num=0
@@ -414,6 +381,3 @@ if __name__ == '__main__':
             send_weights(curr_weights,int(s[batch_num]))
             ready_counter -= 1
 
-            
-
-  

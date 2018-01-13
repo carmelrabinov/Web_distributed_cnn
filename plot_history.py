@@ -10,37 +10,26 @@ try: import cPickle as pickle
 except: import pickle
 import matplotlib.pyplot as plt
 import argparse
-try: import cPickle as pickle
-except: import pickle
 
 
 def send_results_via_mail(filename):
-	recipients = ['carmelrab@gmail.com','amirlivne2@gmail.com']
-	emaillist = [elem.strip().split(',') for elem in recipients]
-	msg = MIMEMultipart()
-	#msg['Subject'] = str(sys.argv[1])
-	msg['Subject'] = 'project A test results'
-	msg['From'] = 'ProjectA.results@gmail.com'
-	msg['Reply-to'] = 'ProjectA.results@gmail.com'
-	 
-	msg.preamble = 'Multipart massage.\n'
-	 
-	part = MIMEText("Hi, please find the attached file")
-	msg.attach(part)
-
-	#filename = str(sys.argv[2])
-	#filename = 'D:\\TECHNION\\projectA\\tasks.txt'
-	part = MIMEApplication(open(filename,"rb").read())
-
-	part.add_header('Content-Disposition', 'attachment', filename=filename)
-	msg.attach(part)
-	 
-	server = smtplib.SMTP("smtp.gmail.com:587")
-	server.ehlo()
-	server.starttls()
-	server.login("ProjectA.results@gmail.com", "carmelamir")
-	 
-	server.sendmail(msg['From'], emaillist , msg.as_string())
+    recipients = ['carmelrab@gmail.com','amirlivne2@gmail.com']
+    emaillist = [elem.strip().split(',') for elem in recipients]
+    msg = MIMEMultipart()
+    msg['Subject'] = 'project A test results'
+    msg['From'] = 'ProjectA.results@gmail.com'
+    msg['Reply-to'] = 'ProjectA.results@gmail.com'
+    msg.preamble = 'Multipart massage.\n'
+    part = MIMEText("Hi, please find the attached file")
+    msg.attach(part)
+    part = MIMEApplication(open(filename,"rb").read())
+    part.add_header('Content-Disposition', 'attachment', filename=filename)
+    msg.attach(part)
+    server = smtplib.SMTP("smtp.gmail.com:587")
+    server.ehlo()
+    server.starttls()
+    server.login("ProjectA.results@gmail.com", "carmelamir")
+    server.sendmail(msg['From'], emaillist , msg.as_string())
     
     
 def build_model():
@@ -60,9 +49,7 @@ def build_model():
     input_shape=(3, 32, 32)
     num_classes = 10
     
-
-
-        # Define the model
+    # Define the model
     model = Sequential()
     model.add(Conv2D(32, (3, 3), padding='same',
                      input_shape=input_shape))
@@ -90,8 +77,7 @@ def build_model():
     model.compile(optimizer=SGD(lr=0.05, momentum=0.0, decay=0.0, nesterov=False), 
                   loss='categorical_crossentropy', 
                   metrics=['accuracy'])
-    
-     
+
     # load and preproccessing data
     (_, _), (x, y) = cifar10.load_data()
     num_train, img_channels, img_rows, img_cols =  x.shape   
@@ -103,10 +89,6 @@ def build_model():
     print("built model")   
     return (model, x, y)
 
-
-#fn = 'weights.pkl'
-#noAdmin = True
-#baseline = False
 
 if __name__ == '__main__':
 
@@ -123,8 +105,7 @@ if __name__ == '__main__':
     if noAdmin:
         with open('.//test_results//'+fn, 'rb') as f:
             [weightsL, timestamp] = pickle.load(f)
-        
-        
+
         (model, x_test, y_test) = build_model()
         print("lodaed model")
         
@@ -143,8 +124,6 @@ if __name__ == '__main__':
 
         with open('//home//carmelrab//web_distributed_dnn//baseline//baseline_results.log', 'rb') as f:
             [lossL, accuracyL, timestamp] = pickle.load(f)  
-
-                     
 
     else:
         with open('//home//carmelrab//web_distributed_dnn//test_results//'+fn, 'rb') as f:

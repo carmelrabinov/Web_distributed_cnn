@@ -1,23 +1,23 @@
 #!/usr/bin/env python
-import pika
 import time
 import sys
+import os
 import json
 import numpy as np
 import argparse
+import pika
+from keras import backend as K
 
 # to aviod warnings
-import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
-import tensorflow as tf
 
-from keras import backend as K
 if K.backend()=='tensorflow':
     K.set_image_dim_ordering("th")  
 
 global model
 X = []
 Y = []
+
 
 # this callback accure every time it train on batch 
 def train_batch_callback(ch, method, properties, body):
@@ -38,13 +38,15 @@ def train_batch_callback(ch, method, properties, body):
         diff_weights = model.get_weights()
         for i in range(len(weights)):
             diff_weights[i] -= weights[i]
+
         # sending weights diff to server
         data = dict(weights = list(np.array(arr).tolist() for arr in diff_weights),train_loss=np.array(train_loss).tolist(), name =name )
         channel.basic_publish(exchange='pika',
                               routing_key='results',
                               body=json.dumps(data))
         if logPrint: print(' [x] Sent batch {} diff_weights to server, calc time is {}'.format(batch_num, time.time() - t0))
-        
+
+
 # this callback accure when the connection between client and server is establish 
 # and responssible for building the nn model
 def build_model_callback(ch, method, properties, body):
@@ -65,7 +67,6 @@ def build_model_callback(ch, method, properties, body):
     global setup
     setup = True
 
-############# main #################
 
 if __name__ == '__main__':
 
@@ -77,41 +78,23 @@ if __name__ == '__main__':
 
     setup = False
     credentials = pika.PlainCredentials('admin', 'admin')
-    parameters = pika.ConnectionParameters(host = host,
-				port = 5672,
-    				virtual_host = '/',
-				credentials = credentials)    
+    parameters = pika.ConnectionParameters(host=host, port=5672, virtual_host='/', credentials=credentials)
     connection = pika.BlockingConnection(parameters)
     
     channel = connection.channel()
-    
-    
+
     channel.queue_declare('model_build '+name)
-    channel.queue_bind(queue='model_build '+name,
-                       exchange='pika',
-                       routing_key='model_build '+name)
+    channel.queue_bind(queue='model_build '+name, exchange='pika', routing_key='model_build '+name)
     
     # new_client annoncment
-    ready_msg = dict(name=name, device = 'pc')
-    channel.basic_publish(exchange='pika',
-                          routing_key='new_client',
-                          body=json.dumps(ready_msg))
+    ready_msg = dict(name=name, device='pc')
+    channel.basic_publish(exchange='pika', routing_key='new_client', body=json.dumps(ready_msg))
+
+    channel.queue_bind(queue='requests', exchange='pika', routing_key='requests')
     
+    channel.basic_consume(build_model_callback, queue='model_build '+name, no_ack=True)
     
-    channel.queue_bind(queue='requests', 
-                       exchange='pika', 
-                       routing_key='requests')
-    
-    
-    channel.basic_consume(build_model_callback,
-                          queue='model_build '+name,
-                          no_ack=True)
-    
-    channel.basic_consume(train_batch_callback,
-                          queue='requests',
-                          no_ack=True)
+    channel.basic_consume(train_batch_callback, queue='requests', no_ack=True)
     
     print(' [*] Waiting for messages. To exit press CTRL+C')
     channel.start_consuming()
-
-
